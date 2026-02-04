@@ -51,16 +51,19 @@ defmodule BinClass do
   @doc """
   Loads a saved model from a file and returns an Nx.Serving struct.
   """
-  def load(path) do
+  def load(path, opts \\ []) do
     binary = File.read!(path)
     data = :erlang.binary_to_term(binary)
 
     {:ok, tokenizer} = Tokenizers.Tokenizer.from_buffer(data.tokenizer_json)
 
-    BinClass.Serving.new(data.model_params, tokenizer,
-      vector_length: data.vector_length,
-      vocab_size: data.vocab_size,
-      labels: data.labels
-    )
+    serving_opts =
+      Keyword.merge(opts,
+        vector_length: data.vector_length,
+        vocab_size: data.vocab_size,
+        labels: data.labels
+      )
+
+    BinClass.Serving.new(data.model_params, tokenizer, serving_opts)
   end
 end

@@ -10,9 +10,11 @@ defmodule BinClass.Serving do
     vocab_size = Keyword.get(opts, :vocab_size, Tokenizer.vocab_size())
     labels = Keyword.get(opts, :labels, [0, 1])
     batch_size = Keyword.get(opts, :batch_size, 16)
+    compiler = Keyword.get(opts, :compiler, EXLA)
+    defn_options = Keyword.get(opts, :defn_options, [])
 
     model = Model.build(vocab_size)
-    {_, predict_fn} = Axon.build(model, compiler: EXLA)
+    {_, predict_fn} = Axon.build(model, compiler: compiler)
 
     Nx.Serving.new(
       fn _defn_options ->
@@ -22,7 +24,8 @@ defmodule BinClass.Serving do
           |> Nx.backend_transfer(Nx.BinaryBackend)
         end
       end,
-      compiler: EXLA
+      compiler: compiler,
+      defn_options: defn_options
     )
     |> Nx.Serving.batch_size(batch_size)
     |> Nx.Serving.client_preprocessing(fn input ->

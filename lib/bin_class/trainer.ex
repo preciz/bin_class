@@ -13,6 +13,7 @@ defmodule BinClass.Trainer do
     labels = Keyword.get(opts, :labels, [0, 1])
     validation_split = Keyword.get(opts, :validation_split, 0.1)
     patience = Keyword.get(opts, :patience, 3)
+    compiler = Keyword.get(opts, :compiler, EXLA)
 
     tokenizer = Tokenizer.train(tokenizer_data_stream)
     vocab_size = Tokenizer.vocab_size()
@@ -48,9 +49,6 @@ defmodule BinClass.Trainer do
       )
       |> Enum.flat_map(fn {:ok, vector} -> vector end)
 
-    Nx.Defn.default_options(compiler: EXLA)
-    Nx.global_default_backend(EXLA.Backend)
-
     batch_count = div(count, batch_size)
     train_batches_count = floor(batch_count * (1.0 - validation_split))
 
@@ -81,7 +79,8 @@ defmodule BinClass.Trainer do
         train_data: Stream.zip(train_data, train_labels),
         test_data: Stream.zip(test_data, test_labels),
         epochs: epochs,
-        patience: patience
+        patience: patience,
+        compiler: compiler
       })
 
     %BinClass.Classifier{
@@ -132,7 +131,8 @@ defmodule BinClass.Trainer do
            train_data: train_data,
            test_data: test_data,
            epochs: epochs,
-           patience: patience
+           patience: patience,
+           compiler: compiler
          } = map,
          opts \\ []
        ) do
@@ -141,7 +141,7 @@ defmodule BinClass.Trainer do
     opts =
       opts
       |> Keyword.put(:epochs, epochs)
-      |> Keyword.merge(garbage_collect: true, compiler: EXLA)
+      |> Keyword.merge(garbage_collect: true, compiler: compiler)
 
     BinClass.Tmp.with_tmp_dir(fn dir ->
       checkpoints_dir = Path.join(dir, "checkpoints")
@@ -165,7 +165,7 @@ defmodule BinClass.Trainer do
         checkpoint = File.read!(checkpoint_path) |> Axon.Loop.deserialize_state()
 
         accuracy =
-          calculate_accuracy(model, checkpoint.step_state.model_state, test_data)
+          calculate_accuracy(model, checkpoint.step_state.model_state, test_data, compiler)
 
         %{epoch: epoch, accuracy: accuracy, checkpoint: checkpoint}
       end)
@@ -173,11 +173,11 @@ defmodule BinClass.Trainer do
     end)
   end
 
-  defp calculate_accuracy(model, trained_model_state, test_data) do
+  defp calculate_accuracy(model, trained_model_state, test_data, compiler) do
     model
     |> Axon.Loop.evaluator()
     |> Axon.Loop.metric(:accuracy, "accuracy")
-    |> Axon.Loop.run(test_data, trained_model_state, compiler: EXLA)
+    |> Axon.Loop.run(test_data, trained_model_state, compiler: compiler)
     |> Map.get(0)
     |> Map.get("accuracy")
     |> Nx.to_number()

@@ -84,4 +84,4 @@ Check out the `examples/` directory for scripts demonstrating various use cases:
 - **Early Stopping**: Automatically halts training when validation loss stops improving.
 - **Automatic Class Balancing**: Handles imbalanced datasets via automated oversampling.
 - **Automated Tokenization**: Automatically builds vocabulary from training data or accepts custom streams.
-- **Efficient**: Uses `EXLA` as the default compiler for high-performance training and inference.
+- **Efficient**: Uses `EXLA` as the default compiler for high-performance training and inference, with support for other `Nx` backends and compilers.
