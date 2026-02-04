@@ -1,25 +1,25 @@
 defmodule BinClass.MixProject do
   use Mix.Project
 
+  @version "0.1.0"
+  @github "https://github.com/preciz/bin_class"
+
   def project do
     [
       app: :bin_class,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
-      description: "An easy-to-use library for building, training, and deploying binary text classifiers with Axon.",
-      package: [
-        licenses: ["MIT"],
-        links: %{"GitHub" => "https://github.com/preciz/bin_class"}
-      ],
       deps: deps(),
+
+      # Hex
+      package: package(),
+      description:
+        "An easy-to-use library for building, training, and deploying binary text classifiers with Axon.",
 
       # Docs
       name: "BinClass",
-      docs: [
-        main: "BinClass",
-        extras: ["README.md"]
-      ]
+      docs: docs()
     ]
   end
 
@@ -39,6 +39,23 @@ defmodule BinClass.MixProject do
       {:tokenizers, "~> 0.5"},
       {:explorer, "~> 0.11"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false}
+    ]
+  end
+
+  defp package do
+    [
+      maintainers: ["Barna Kovacs"],
+      licenses: ["MIT"],
+      links: %{"GitHub" => @github}
+    ]
+  end
+
+  defp docs do
+    [
+      main: "BinClass",
+      source_ref: "v#{@version}",
+      source_url: @github,
+      extras: ["README.md"]
     ]
   end
 end
