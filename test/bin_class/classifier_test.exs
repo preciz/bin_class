@@ -18,7 +18,7 @@ defmodule BinClass.ClassifierTest do
     assert inspected =~ "vector_length: 128"
     assert inspected =~ "vocab_size: 1000"
     assert inspected =~ "epoch: 5"
-    
+
     # Ensure model_params (which could be huge) is NOT in the output
     refute inspected =~ "model_params"
   end
