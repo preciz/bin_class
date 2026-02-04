@@ -19,7 +19,7 @@ data = List.duplicate(data, 10) |> List.flatten()
 classifier =
   BinClass.Trainer.train(data,
     epochs: 10,
-    labels: [:negative, :positive],
+    labels: %{0 => :negative, 1 => :positive},
     validation_split: 0.2
   )
 
