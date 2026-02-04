@@ -28,12 +28,12 @@ defmodule BinClass.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:axon, "~> 0.7"},
+      {:axon, "~> 0.8"},
       {:exla, "~> 0.10"},
       {:nx, "~> 0.10"},
       {:tokenizers, "~> 0.5"},
-      {:explorer, "~> 0.10"},
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false}
+      {:explorer, "~> 0.11"},
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false}
     ]
   end
 end
