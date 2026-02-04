@@ -62,4 +62,12 @@ defmodule BinClass.TrainerTest do
     assert %BinClass.Classifier{} = result
     assert result.accuracy >= 0
   end
+
+  test "custom compiler" do
+    data = [%{text: "a", label: 1}, %{text: "b", label: 0}]
+    # We use EXLA explicitly
+    result = Trainer.train(data, epochs: 1, batch_size: 1, compiler: EXLA)
+    assert %BinClass.Classifier{} = result
+    assert result.accuracy >= 0
+  end
 end
