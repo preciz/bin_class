@@ -66,6 +66,14 @@ prediction = Nx.Serving.run(serving, "I love this library!")
 results = Nx.Serving.run(serving, ["Great tool", "Bad bugs"])
 ```
 
+## Examples
+
+Check out the `examples/` directory for scripts demonstrating various use cases:
+
+- `simple_inference.exs`: Shows how to quickly run predictions with a pre-trained model.
+- `train_and_save.exs`: Demonstrates the full workflow of training a model and saving it to disk.
+- `production_serving.exs`: Illustrates how to integrate `BinClass` into a supervision tree for production environments.
+
 ## Features
 
 - **Production Ready**: Built on `Nx.Serving` for automatic batching and process isolation.
