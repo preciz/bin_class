@@ -7,6 +7,11 @@ defmodule BinClass.MixProject do
       version: "0.1.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
+      description: "An easy-to-use library for building, training, and deploying binary text classifiers with Axon.",
+      package: [
+        licenses: ["MIT"],
+        links: %{"GitHub" => "https://github.com/preciz/bin_class"}
+      ],
       deps: deps(),
 
       # Docs
