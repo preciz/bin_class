@@ -1,6 +1,6 @@
 # BinClass
 
-An Elixir library for building and using binary text classifiers using [Axon](https://github.com/elixir-nx/axon).
+An easy-to-use Elixir library for building, training, and deploying binary text classifiers with [Axon](https://github.com/elixir-nx/axon).
 
 This library provides a simplified interface for training a neural network on text data and using it for predictions, handling tokenization, vectorization, and model training out of the box.
 
