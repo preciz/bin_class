@@ -12,15 +12,19 @@ defmodule BinClass do
         # ... more data
       ]
 
-      classifier = BinClass.Trainer.train(data, epochs: 5, labels: [:negative, :positive])
+      # Use a map for explicit label mapping
+      classifier = BinClass.Trainer.train(data,
+        epochs: 5,
+        labels: %{0 => :negative, 1 => :positive}
+      )
 
       # Save the model
       BinClass.save(classifier, "model.bin")
 
   ### Prediction
 
-      # Load the model as a serving
-      serving = BinClass.load("model.bin")
+      # Load the model as a serving (supports custom compiler/defn_options)
+      serving = BinClass.load("model.bin", compiler: EXLA)
 
       result = Nx.Serving.run(serving, "Some text to classify")
       # result is %{label: :positive, confidence: 0.99, ...}

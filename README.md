@@ -75,6 +75,7 @@ Check out the `examples/` directory for scripts demonstrating various use cases:
 - `simple_inference.exs`: Shows how to quickly run predictions with a pre-trained model.
 - `train_and_save.exs`: Demonstrates the full workflow of training a model and saving it to disk.
 - `production_serving.exs`: Illustrates how to integrate `BinClass` into a supervision tree for production environments.
+- `configurable_backend.exs`: Shows how to use custom compilers and definition options for training and inference.
 
 ## Features
 
