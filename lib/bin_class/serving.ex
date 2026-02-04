@@ -55,12 +55,27 @@ defmodule BinClass.Serving do
   defp decode_prediction(probs, labels) do
     max_prob = Enum.max(probs)
     max_index = Enum.find_index(probs, &(&1 == max_prob))
-    label = Enum.at(labels, max_index)
+
+    label =
+      if is_map(labels) do
+        Map.get(labels, max_index)
+      else
+        Enum.at(labels, max_index)
+      end
+
+    probabilities =
+      if is_map(labels) do
+        probs
+        |> Enum.with_index()
+        |> Map.new(fn {prob, idx} -> {Map.get(labels, idx), prob} end)
+      else
+        Enum.zip(labels, probs) |> Map.new()
+      end
 
     %{
       label: label,
       confidence: max_prob,
-      probabilities: Enum.zip(labels, probs) |> Map.new()
+      probabilities: probabilities
     }
   end
 end

@@ -33,9 +33,11 @@ data = [
 ### 2. Train the model
 
 ```elixir
-# By default, uses labels [0, 1]
-# Returns a %BinClass.Classifier{} struct
-classifier = BinClass.Trainer.train(data, epochs: 10, labels: [:negative, :positive])
+# Labels can be a list (index 0 and 1) or an explicit map
+classifier = BinClass.Trainer.train(data,
+  epochs: 10,
+  labels: %{0 => :negative, 1 => :positive}
+)
 ```
 
 ### 3. Save and Load
