@@ -7,12 +7,12 @@ defmodule BinClass.Trainer do
   def train(data_stream, opts \\ []) do
     tokenizer_data_stream = Keyword.get(opts, :tokenizer_data, Stream.map(data_stream, & &1.text))
     epochs = Keyword.get(opts, :epochs, 10)
-    batch_size = Keyword.get(opts, :batch_size, 16)
+    batch_size = Keyword.get(opts, :batch_size, 32)
     learning_rate = Keyword.get(opts, :learning_rate, 1.0e-3)
     decay = Keyword.get(opts, :decay, 1.0e-2)
     labels = Keyword.get(opts, :labels, [0, 1])
     validation_split = Keyword.get(opts, :validation_split, 0.1)
-    patience = Keyword.get(opts, :patience, 3)
+    patience = Keyword.get(opts, :patience, 5)
     compiler = Keyword.get(opts, :compiler, EXLA)
 
     tokenizer = Tokenizer.train(tokenizer_data_stream)
@@ -29,7 +29,7 @@ defmodule BinClass.Trainer do
             end)
             |> Enum.to_list()
 
-          percentile_95(lengths)
+          percentile_90(lengths)
 
         val ->
           val
@@ -94,12 +94,12 @@ defmodule BinClass.Trainer do
     }
   end
 
-  defp percentile_95([]), do: @default_vector_length
+  defp percentile_90([]), do: @default_vector_length
 
-  defp percentile_95(list) do
+  defp percentile_90(list) do
     sorted = Enum.sort(list)
     count = length(sorted)
-    index = floor(count * 0.95)
+    index = floor(count * 0.90)
     Enum.at(sorted, index) |> max(1)
   end
 

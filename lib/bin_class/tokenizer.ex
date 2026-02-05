@@ -1,7 +1,7 @@
 defmodule BinClass.Tokenizer do
   alias Tokenizers.{Tokenizer, Trainer, PreTokenizer, Model}
 
-  @vocab_size 10_000
+  @vocab_size 30_000
 
   def vocab_size, do: @vocab_size
 

@@ -1,6 +1,6 @@
 defmodule BinClass.Model do
   def build(vocab_size, opts \\ []) do
-    embedding_size = Keyword.get(opts, :embedding_size, 32)
+    embedding_size = Keyword.get(opts, :embedding_size, 64)
     conv_filters = Keyword.get(opts, :conv_filters, 32)
     dropout_rate = Keyword.get(opts, :dropout_rate, 0.5)
 
@@ -12,14 +12,40 @@ defmodule BinClass.Model do
       |> Axon.spatial_dropout(rate: 0.1)
       |> Axon.layer_norm()
 
-    branches =
-      for kernel_size <- [3, 4, 5] do
-        embedding
-        |> Axon.conv(conv_filters, kernel_size: kernel_size, activation: :relu, padding: :same)
-        |> Axon.global_max_pool()
-      end
+    # Standard branches: Kernels [3, 5, 7]
+    standard_branches =
+      for kernel_size <- [3, 5, 7] do
+        conv =
+          embedding
+          |> Axon.conv(conv_filters, kernel_size: kernel_size, activation: :relu, padding: :same)
 
-    Axon.concatenate(branches)
+        max_pool = Axon.global_max_pool(conv)
+        avg_pool = Axon.global_avg_pool(conv)
+
+        [max_pool, avg_pool]
+      end
+      |> List.flatten()
+
+    # Dilated branches: Kernel 3 with dilation [2, 3]
+    dilated_branches =
+      for dilation <- [2, 3] do
+        conv =
+          embedding
+          |> Axon.conv(conv_filters,
+            kernel_size: 3,
+            kernel_dilation: dilation,
+            activation: :relu,
+            padding: :same
+          )
+
+        max_pool = Axon.global_max_pool(conv)
+        avg_pool = Axon.global_avg_pool(conv)
+
+        [max_pool, avg_pool]
+      end
+      |> List.flatten()
+
+    Axon.concatenate(standard_branches ++ dilated_branches)
     |> Axon.flatten()
     |> Axon.layer_norm()
     |> Axon.dropout(rate: dropout_rate)
