@@ -35,6 +35,14 @@ defmodule BinClass do
   Saves the classifier to a file.
   """
   def save(%BinClass.Classifier{} = classifier, path) do
+    binary = serialize(classifier)
+    File.write!(path, binary)
+  end
+
+  @doc """
+  Serializes the classifier to a binary.
+  """
+  def serialize(%BinClass.Classifier{} = classifier) do
     # Ensure model params are on Binary backend for safe serialization
     model_params_binary = Nx.backend_copy(classifier.model_params, Nx.BinaryBackend)
 
@@ -48,8 +56,7 @@ defmodule BinClass do
       epoch: classifier.epoch
     }
 
-    binary = :erlang.term_to_binary(data)
-    File.write!(path, binary)
+    :erlang.term_to_binary(data)
   end
 
   @doc """
@@ -57,6 +64,13 @@ defmodule BinClass do
   """
   def load(path, opts \\ []) do
     binary = File.read!(path)
+    deserialize(binary, opts)
+  end
+
+  @doc """
+  Deserializes a saved model from a binary and returns an Nx.Serving struct.
+  """
+  def deserialize(binary, opts \\ []) when is_binary(binary) do
     data = :erlang.binary_to_term(binary)
 
     {:ok, tokenizer} = Tokenizers.Tokenizer.from_buffer(data.tokenizer_json)

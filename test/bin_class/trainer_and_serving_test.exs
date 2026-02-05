@@ -44,7 +44,9 @@ defmodule BinClass.TrainerAndServingTest do
       assert %{label: _, confidence: _} = prediction
 
       # Test loading with options
-      serving_with_opts = BinClass.load(model_path, compiler: EXLA, defn_options: [compiler: EXLA])
+      serving_with_opts =
+        BinClass.load(model_path, compiler: EXLA, defn_options: [compiler: EXLA])
+
       prediction2 = Nx.Serving.run(serving_with_opts, "happy")
       assert %{label: _, confidence: _} = prediction2
 
