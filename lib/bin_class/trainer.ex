@@ -3,7 +3,7 @@ defmodule BinClass.Trainer do
   alias BinClass.{Model, Vectorizer, Tokenizer}
 
   @default_vector_length 256
-  @model_version 3
+  @model_version 4
 
   def train(data_stream, opts \\ []) do
     tokenizer_data_stream = Keyword.get(opts, :tokenizer_data, Stream.map(data_stream, & &1.text))

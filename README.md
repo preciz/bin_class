@@ -82,7 +82,7 @@ Check out the `examples/` directory for scripts demonstrating various use cases:
 - **Production Ready**: Built on `Nx.Serving` for automatic batching and process isolation.
 - **Unified Serialization**: Save and load the entire classifier state from a single file.
 - **Model Versioning**: Decouples model parameters from code changes by explicitly versioning architectures.
-- **CNN Architecture**: Uses multi-scale 1D convolutions (3-gram & 5-gram) with mixed pooling for robust feature extraction.
+- **CNN Architecture**: Uses **Sep-SE-CNN** (Separable Convolutions + Squeeze-and-Excitation) with multi-scale kernels (3, 4, 5-gram) and mixed pooling for state-of-the-art efficiency and accuracy.
 - **Early Stopping**: Automatically halts training when validation loss stops improving.
 - **Automatic Class Balancing**: Handles imbalanced datasets via automated oversampling.
 - **Automated Tokenization**: Automatically builds vocabulary from training data or accepts custom streams.
