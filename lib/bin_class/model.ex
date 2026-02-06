@@ -7,13 +7,13 @@ defmodule BinClass.Model do
 
   ## Adding a new version
 
-  1. Create a new module `BinClass.Model.V2` in `lib/bin_class/model/v2.ex`.
+  1. Create a new module `BinClass.Model.V5` in `lib/bin_class/model/v5.ex`.
   2. Implement `build/2` in that module.
   3. Add a new clause to `BinClass.Model.build/3`:
      ```elixir
-     def build(2, vocab_size, opts), do: BinClass.Model.V2.build(vocab_size, opts)
+     def build(5, vocab_size, opts), do: BinClass.Model.V5.build(vocab_size, opts)
      ```
-  4. Update `@model_version` in `BinClass.Trainer` to `4`.
+  4. Update `@model_version` in `BinClass.Trainer` to `5`.
   """
 
   @doc """
