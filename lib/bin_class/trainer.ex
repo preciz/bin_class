@@ -15,6 +15,7 @@ defmodule BinClass.Trainer do
     validation_split = Keyword.get(opts, :validation_split, 0.1)
     patience = Keyword.get(opts, :patience, 5)
     compiler = Keyword.get(opts, :compiler, EXLA)
+    model_version = Keyword.get(opts, :model_version, @model_version)
 
     tokenizer = Tokenizer.train(tokenizer_data_stream)
     vocab_size = Tokenizer.vocab_size()
@@ -68,7 +69,7 @@ defmodule BinClass.Trainer do
       |> Nx.to_batched(batch_size, leftover: :discard)
       |> Enum.split(train_batches_count)
 
-    build_model_fn = fn -> Model.build(@model_version, vocab_size) end
+    build_model_fn = fn -> Model.build(model_version, vocab_size) end
     optimizer = Polaris.Optimizers.adamw(learning_rate: learning_rate, decay: decay)
 
     train_model = Axon.Loop.trainer(build_model_fn.(), :categorical_cross_entropy, optimizer)
@@ -92,7 +93,7 @@ defmodule BinClass.Trainer do
       vector_length: vector_length,
       vocab_size: vocab_size,
       labels: labels,
-      model_version: @model_version
+      model_version: model_version
     }
   end
 
