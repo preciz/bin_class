@@ -13,8 +13,9 @@ defmodule BinClass.Serving do
     compiler = Keyword.get(opts, :compiler, EXLA)
     defn_options = Keyword.get(opts, :defn_options, [])
     model_version = Keyword.get(opts, :model_version, 1)
+    dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
 
-    model = Model.build(model_version, vocab_size)
+    model = Model.build(model_version, vocab_size, dropout_rate: dropout_rate)
     {_, predict_fn} = Axon.build(model, compiler: compiler)
 
     Nx.Serving.new(

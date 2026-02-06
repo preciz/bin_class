@@ -29,6 +29,14 @@ defmodule BinClass do
       result = Nx.Serving.run(serving, "Some text to classify")
       # result is %{label: :positive, confidence: 0.99, ...}
 
+  ### Ultra-Low Latency Inference
+
+      # Load raw classifier and compile a predictor function
+      classifier = BinClass.load_classifier("model.bin")
+      predict = BinClass.compile_predictor(classifier)
+
+      result = predict.("Instant prediction")
+
   """
 
   @doc """
@@ -73,7 +81,8 @@ defmodule BinClass do
         vector_length: classifier.vector_length,
         vocab_size: classifier.vocab_size,
         labels: classifier.labels,
-        model_version: classifier.model_version
+        model_version: classifier.model_version,
+        dropout_rate: classifier.dropout_rate || 0.2
       )
 
     BinClass.Serving.new(classifier.model_params, classifier.tokenizer, serving_opts)
@@ -90,7 +99,8 @@ defmodule BinClass do
         vector_length: classifier.vector_length,
         vocab_size: classifier.vocab_size,
         labels: classifier.labels,
-        model_version: classifier.model_version
+        model_version: classifier.model_version,
+        dropout_rate: classifier.dropout_rate || 0.2
       )
 
     BinClass.Serving.new(classifier.model_params, classifier.tokenizer, serving_opts)
@@ -122,7 +132,7 @@ defmodule BinClass do
       epoch: Map.get(data, :epoch),
       model_version: Map.get(data, :model_version, 1),
       learning_rate: Map.get(data, :learning_rate),
-      dropout_rate: Map.get(data, :dropout_rate)
+      dropout_rate: Map.get(data, :dropout_rate, 0.2)
     }
   end
 
@@ -145,7 +155,7 @@ defmodule BinClass do
     compiler = Keyword.get(opts, :compiler, EXLA)
     batch_size = Keyword.get(opts, :batch_size, 1)
 
-    model = BinClass.Model.build(classifier.model_version, classifier.vocab_size)
+    model = BinClass.Model.build(classifier.model_version, classifier.vocab_size, dropout_rate: classifier.dropout_rate || 0.2)
     {_, predict_fn} = Axon.build(model, compiler: compiler)
 
     # Compile the prediction function specifically for the given batch size

@@ -38,6 +38,9 @@ classifier = BinClass.Trainer.train(data,
   epochs: 10,
   labels: %{0 => :negative, 1 => :positive}
 )
+
+# Optional: Enable auto-tuning to find the best Learning Rate and Dropout
+classifier = BinClass.Trainer.train(data, tune: true)
 ```
 
 ### 3. Save and Load
@@ -47,25 +50,29 @@ You can save the entire model (including tokenizer, parameters, and metadata) to
 ```elixir
 BinClass.save(classifier, "my_model.bin")
 
-# Load the model as an Nx.Serving struct
+# Load the model as an Nx.Serving struct (recommended for most apps)
 serving = BinClass.load("my_model.bin")
 ```
 
-### 4. Inference
+### 4. Optimized Inference
 
-Run predictions using `Nx.Serving`. This handles batching automatically for high throughput.
+There are two ways to run predictions:
+
+#### A. Using `Nx.Serving` (High Throughput)
+Recommended for web servers and concurrent applications. It handles automatic batching.
 
 ```elixir
-# Single prediction
 prediction = Nx.Serving.run(serving, "I love this library!")
-# %{
-#   label: :positive,
-#   confidence: 0.99,
-#   probabilities: %{negative: 0.01, positive: 0.99}
-# }
+```
 
-# Batch prediction
-results = Nx.Serving.run(serving, ["Great tool", "Bad bugs"])
+#### B. Using a Compiled Predictor (Ultra-Low Latency)
+Recommended for CLI tools or scripts where you want the lowest possible latency for single items by bypassing the serving overhead.
+
+```elixir
+classifier = BinClass.load_classifier("my_model.bin")
+predict = BinClass.compile_predictor(classifier)
+
+result = predict.("This is ultra fast.")
 ```
 
 ## Examples

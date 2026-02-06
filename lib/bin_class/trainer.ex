@@ -5,6 +5,25 @@ defmodule BinClass.Trainer do
   @default_vector_length 256
   @model_version 4
 
+  @doc """
+  Trains a binary classifier on the given data stream.
+
+  ## Options
+
+    * `:epochs` - Number of training epochs. Defaults to `10`.
+    * `:batch_size` - Batch size for training. Defaults to `32`.
+    * `:learning_rate` - Initial learning rate. Defaults to `1.0e-3`.
+    * `:decay` - Learning rate decay. Defaults to `1.0e-2`.
+    * `:labels` - Mapping of labels. Can be a list or a map. Defaults to `[0, 1]`.
+    * `:validation_split` - Fraction of data to use for validation. Defaults to `0.1`.
+    * `:patience` - Number of epochs to wait for improvement before early stopping. Defaults to `5`.
+    * `:compiler` - The Nx compiler to use. Defaults to `EXLA`.
+    * `:model_version` - The architecture version to use. Defaults to `#{@model_version}`.
+    * `:tune` - If `true`, performs automatic hyperparameter tuning for learning rate and dropout. Defaults to `false`.
+    * `:dropout_rate` - Dropout rate for the model (ignored if `:tune` is `true`). Defaults to `0.2`.
+    * `:vector_length` - Fixed sequence length for tokenization. If not provided, it is automatically calculated from data.
+    * `:tokenizer_data` - Custom data stream to train the tokenizer. Defaults to the `:text` field of `data_stream`.
+  """
   def train(data_stream, opts \\ []) do
     tokenizer_data_stream = Keyword.get(opts, :tokenizer_data, Stream.map(data_stream, & &1.text))
     epochs = Keyword.get(opts, :epochs, 10)
