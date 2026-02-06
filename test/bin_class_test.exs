@@ -50,4 +50,40 @@ defmodule BinClassTest do
     serving = BinClass.deserialize(binary)
     assert %Nx.Serving{} = serving
   end
+
+  test "compile_predictor returns working prediction function" do
+    data = [
+      %{text: "I love this!", label: 1},
+      %{text: "I hate this!", label: 0},
+      %{text: "I love this!", label: 1},
+      %{text: "I hate this!", label: 0},
+      %{text: "I love this!", label: 1},
+      %{text: "I hate this!", label: 0},
+      %{text: "I love this!", label: 1},
+      %{text: "I hate this!", label: 0},
+      %{text: "I love this!", label: 1},
+      %{text: "I hate this!", label: 0},
+      %{text: "I love this!", label: 1},
+      %{text: "I hate this!", label: 0},
+      %{text: "I love this!", label: 1},
+      %{text: "I hate this!", label: 0},
+      %{text: "I love this!", label: 1},
+      %{text: "I hate this!", label: 0},
+      %{text: "I love this!", label: 1},
+      %{text: "I hate this!", label: 0},
+      %{text: "I love this!", label: 1},
+      %{text: "I hate this!", label: 0}
+    ]
+    classifier = BinClass.Trainer.train(data, epochs: 1, batch_size: 2)
+    
+    predictor = BinClass.compile_predictor(classifier, batch_size: 2)
+    
+    result = predictor.("I love this!")
+    assert %{label: _, confidence: _, probabilities: _} = result
+    assert result.label in [0, 1]
+
+    # Batch input
+    results = predictor.(["I love this!", "I hate this!"])
+    assert length(results) == 2
+  end
 end

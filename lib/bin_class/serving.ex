@@ -53,10 +53,12 @@ defmodule BinClass.Serving do
     end)
   end
 
-  defp validate_input(input) when is_list(input), do: {input, true}
-  defp validate_input(input), do: {[input], false}
+  @doc false
+  def validate_input(input) when is_list(input), do: {input, true}
+  def validate_input(input), do: {[input], false}
 
-  defp decode_prediction(probs, labels) do
+  @doc false
+  def decode_prediction(probs, labels) do
     max_prob = Enum.max(probs)
     max_index = Enum.find_index(probs, &(&1 == max_prob))
 

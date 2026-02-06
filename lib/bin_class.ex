@@ -66,28 +66,128 @@ defmodule BinClass do
   Loads a saved model from a file and returns an Nx.Serving struct.
   """
   def load(path, opts \\ []) do
-    binary = File.read!(path)
-    deserialize(binary, opts)
+    classifier = load_classifier(path)
+    
+    serving_opts =
+      Keyword.merge(opts,
+        vector_length: classifier.vector_length,
+        vocab_size: classifier.vocab_size,
+        labels: classifier.labels,
+        model_version: classifier.model_version
+      )
+
+    BinClass.Serving.new(classifier.model_params, classifier.tokenizer, serving_opts)
   end
 
   @doc """
   Deserializes a saved model from a binary and returns an Nx.Serving struct.
   """
   def deserialize(binary, opts \\ []) when is_binary(binary) do
+    classifier = deserialize_classifier(binary)
+
+    serving_opts =
+      Keyword.merge(opts,
+        vector_length: classifier.vector_length,
+        vocab_size: classifier.vocab_size,
+        labels: classifier.labels,
+        model_version: classifier.model_version
+      )
+
+    BinClass.Serving.new(classifier.model_params, classifier.tokenizer, serving_opts)
+  end
+
+  @doc """
+  Loads a saved model from a file and returns a BinClass.Classifier struct.
+  """
+  def load_classifier(path) do
+    binary = File.read!(path)
+    deserialize_classifier(binary)
+  end
+
+  @doc """
+  Deserializes a saved model from a binary and returns a BinClass.Classifier struct.
+  """
+  def deserialize_classifier(binary) when is_binary(binary) do
     data = :erlang.binary_to_term(binary)
 
     {:ok, tokenizer} = Tokenizers.Tokenizer.from_buffer(data.tokenizer_json)
 
-    serving_opts =
-      Keyword.merge(opts,
-        vector_length: data.vector_length,
-        vocab_size: data.vocab_size,
-        labels: data.labels,
-        model_version: Map.get(data, :model_version, 1),
-        learning_rate: Map.get(data, :learning_rate),
-        dropout_rate: Map.get(data, :dropout_rate)
-      )
+    %BinClass.Classifier{
+      tokenizer: tokenizer,
+      model_params: data.model_params,
+      vector_length: data.vector_length,
+      vocab_size: data.vocab_size,
+      labels: data.labels,
+      accuracy: Map.get(data, :accuracy),
+      epoch: Map.get(data, :epoch),
+      model_version: Map.get(data, :model_version, 1),
+      learning_rate: Map.get(data, :learning_rate),
+      dropout_rate: Map.get(data, :dropout_rate)
+    }
+  end
 
-    BinClass.Serving.new(data.model_params, tokenizer, serving_opts)
+  @doc """
+  Compiles the classifier into a highly optimized, in-process prediction function.
+
+  This is intended for scenarios where lowest possible latency is required
+  and batching (provided by Nx.Serving) is not necessary (e.g. CLI tools,
+  single-user scripts, or very low-concurrency high-speed inference).
+
+  Returns an anonymous function that takes a text (string) or list of texts
+  and returns the classification results.
+
+  ## Options
+
+    * `:compiler` - The compiler to use. Defaults to `EXLA`.
+    * `:batch_size` - The batch size to compile for. Defaults to 1 (lowest latency).
+  """
+  def compile_predictor(%BinClass.Classifier{} = classifier, opts \\ []) do
+    compiler = Keyword.get(opts, :compiler, EXLA)
+    batch_size = Keyword.get(opts, :batch_size, 1)
+
+    model = BinClass.Model.build(classifier.model_version, classifier.vocab_size)
+    {_, predict_fn} = Axon.build(model, compiler: compiler)
+
+    # Compile the prediction function specifically for the given batch size
+    template = Nx.broadcast(0, {batch_size, classifier.vector_length}) |> Nx.as_type(:u16)
+
+    # Warmup / JIT compilation
+    _ = predict_fn.(classifier.model_params, template)
+
+    fn input ->
+      {texts, multi?} = BinClass.Serving.validate_input(input)
+
+      # Pad or truncate to batch_size
+      batch_texts =
+        if length(texts) < batch_size do
+          # Pad with empty strings if smaller than compiled batch size
+          texts ++ List.duplicate("", batch_size - length(texts))
+        else
+          # Take only up to compiled batch size
+          Enum.take(texts, batch_size)
+        end
+
+      batch_tensor =
+        batch_texts
+        |> Enum.map(fn text ->
+          BinClass.Vectorizer.build(classifier.tokenizer, text, classifier.vector_length)
+          |> Nx.tensor(type: :u16)
+        end)
+        |> Nx.Batch.stack()
+
+      # Run inference directly
+      batch_output =
+        predict_fn.(classifier.model_params, batch_tensor)
+        |> Nx.backend_transfer(Nx.BinaryBackend)
+
+      # Decode only the requested number of items
+      results =
+        batch_output
+        |> Nx.to_list()
+        |> Enum.take(length(texts))
+        |> Enum.map(fn probs -> BinClass.Serving.decode_prediction(probs, classifier.labels) end)
+
+      if multi?, do: results, else: List.first(results)
+    end
   end
 end
