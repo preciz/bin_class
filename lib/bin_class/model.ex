@@ -13,7 +13,7 @@ defmodule BinClass.Model do
      ```elixir
      def build(2, vocab_size, opts), do: BinClass.Model.V2.build(vocab_size, opts)
      ```
-  4. Update `@model_version` in `BinClass.Trainer` to `2`.
+  4. Update `@model_version` in `BinClass.Trainer` to `4`.
   """
 
   @doc """
