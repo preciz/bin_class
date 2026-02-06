@@ -3,12 +3,13 @@ defmodule BinClass.Model.V2 do
 
   def build(vocab_size, opts \\ []) do
     embedding_size = Keyword.get(opts, :embedding_size, 64)
-    conv_filters = Keyword.get(opts, :conv_filters, 96) # Reduced from 128
+    # Reduced from 128
+    conv_filters = Keyword.get(opts, :conv_filters, 96)
     dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
 
     input = Axon.input("input")
-    
-    x = 
+
+    x =
       input
       |> Axon.embedding(vocab_size, embedding_size)
       |> Axon.dropout(rate: dropout_rate)
@@ -16,7 +17,7 @@ defmodule BinClass.Model.V2 do
 
     # Global Average Pooling
     avg_pool = Axon.global_avg_pool(x)
-    
+
     # Global Max Pooling
     max_pool = Axon.global_max_pool(x)
 
@@ -26,4 +27,3 @@ defmodule BinClass.Model.V2 do
     |> Axon.dense(2, activation: :softmax)
   end
 end
-

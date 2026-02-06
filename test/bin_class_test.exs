@@ -11,7 +11,7 @@ defmodule BinClassTest do
 
   test "serialization round-trip with version check" do
     tokenizer = BinClass.Tokenizer.train(["hello world"])
-    
+
     classifier = %BinClass.Classifier{
       tokenizer: tokenizer,
       model_params: Nx.tensor([0.1, 0.2], type: :f32) |> Nx.backend_transfer(Nx.BinaryBackend),
@@ -20,7 +20,8 @@ defmodule BinClassTest do
       vector_length: 10,
       vocab_size: 100,
       labels: [0, 1],
-      model_version: 99 # Invalid version
+      # Invalid version
+      model_version: 99
     }
 
     serialized = BinClass.serialize(classifier)
@@ -33,7 +34,7 @@ defmodule BinClassTest do
 
   test "deserialization defaults to version 1" do
     tokenizer = BinClass.Tokenizer.train(["hello world"])
-    
+
     data = %{
       tokenizer_json: BinClass.Tokenizer.to_json(tokenizer),
       model_params: Nx.tensor([0.1, 0.2], type: :f32) |> Nx.backend_transfer(Nx.BinaryBackend),
@@ -44,7 +45,7 @@ defmodule BinClassTest do
     }
 
     binary = :erlang.term_to_binary(data)
-    
+
     # Should not raise, assuming version 1 is valid
     serving = BinClass.deserialize(binary)
     assert %Nx.Serving{} = serving

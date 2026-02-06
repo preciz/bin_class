@@ -8,7 +8,9 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model
 
     # Test custom opts
-    model_opts = Model.build(1, vocab_size, embedding_size: 32, conv_filters: 64, dropout_rate: 0.1)
+    model_opts =
+      Model.build(1, vocab_size, embedding_size: 32, conv_filters: 64, dropout_rate: 0.1)
+
     assert %Axon{} = model_opts
 
     # Direct call to V1
@@ -21,7 +23,9 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model
 
     # Test custom opts
-    model_opts = Model.build(2, vocab_size, embedding_size: 32, conv_filters: 64, dropout_rate: 0.1)
+    model_opts =
+      Model.build(2, vocab_size, embedding_size: 32, conv_filters: 64, dropout_rate: 0.1)
+
     assert %Axon{} = model_opts
 
     # Direct call to V2
@@ -34,7 +38,9 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model
 
     # Test custom opts
-    model_opts = Model.build(3, vocab_size, embedding_size: 32, branch_filters: 16, dropout_rate: 0.1)
+    model_opts =
+      Model.build(3, vocab_size, embedding_size: 32, branch_filters: 16, dropout_rate: 0.1)
+
     assert %Axon{} = model_opts
 
     # Direct call to V3
@@ -47,7 +53,9 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model
 
     # Test custom opts
-    model_opts = Model.build(4, vocab_size, embedding_size: 32, branch_filters: 16, dropout_rate: 0.1)
+    model_opts =
+      Model.build(4, vocab_size, embedding_size: 32, branch_filters: 16, dropout_rate: 0.1)
+
     assert %Axon{} = model_opts
 
     # Direct call to V4

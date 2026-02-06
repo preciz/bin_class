@@ -57,11 +57,13 @@ defmodule BinClass.ServingTest do
     {init_fn, _} = Axon.build(model)
     params = init_fn.(Nx.broadcast(0, {1, 16}) |> Nx.as_type(:u16), Axon.ModelState.empty())
 
-    serving = Serving.new(params, tokenizer, 
-      batch_size: 4,
-      compiler: EXLA,
-      defn_options: [compiler: EXLA]
-    )
+    serving =
+      Serving.new(params, tokenizer,
+        batch_size: 4,
+        compiler: EXLA,
+        defn_options: [compiler: EXLA]
+      )
+
     assert %Nx.Serving{} = serving
   end
 

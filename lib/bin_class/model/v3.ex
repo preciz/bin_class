@@ -4,23 +4,23 @@ defmodule BinClass.Model.V3 do
   def build(vocab_size, opts \\ []) do
     embedding_size = Keyword.get(opts, :embedding_size, 64)
     # Reduced filters per branch to maintain speed (Total 4 branches * 32 = 128 features)
-    branch_filters = Keyword.get(opts, :branch_filters, 32) 
+    branch_filters = Keyword.get(opts, :branch_filters, 32)
     dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
 
     input = Axon.input("input")
-    
-    embedded = 
+
+    embedded =
       input
       |> Axon.embedding(vocab_size, embedding_size)
       |> Axon.dropout(rate: dropout_rate)
 
     # Branch A: 3-gram
-    conv3 = 
+    conv3 =
       embedded
       |> Axon.conv(branch_filters, kernel_size: 3, activation: :relu)
 
     # Branch B: 5-gram
-    conv5 = 
+    conv5 =
       embedded
       |> Axon.conv(branch_filters, kernel_size: 5, activation: :relu)
 
