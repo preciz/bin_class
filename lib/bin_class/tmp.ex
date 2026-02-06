@@ -1,7 +1,5 @@
 defmodule BinClass.Tmp do
-  @moduledoc """
-  Internal helper for managing temporary directories without external dependencies.
-  """
+  @moduledoc false
 
   @doc """
   Executes a function within a temporary directory.
