@@ -10,7 +10,8 @@ defmodule BinClass.Classifier do
     :vector_length,
     :vocab_size,
     :accuracy,
-    :epoch
+    :epoch,
+    :model_version
   ]
 
   defimpl Inspect do
@@ -21,6 +22,7 @@ defmodule BinClass.Classifier do
         "#BinClass.Classifier<",
         to_doc(
           %{
+            model_version: classifier.model_version,
             labels: classifier.labels,
             vector_length: classifier.vector_length,
             vocab_size: classifier.vocab_size,

@@ -53,7 +53,8 @@ defmodule BinClass do
       vocab_size: classifier.vocab_size,
       labels: classifier.labels,
       accuracy: classifier.accuracy,
-      epoch: classifier.epoch
+      epoch: classifier.epoch,
+      model_version: classifier.model_version
     }
 
     :erlang.term_to_binary(data)
@@ -79,7 +80,8 @@ defmodule BinClass do
       Keyword.merge(opts,
         vector_length: data.vector_length,
         vocab_size: data.vocab_size,
-        labels: data.labels
+        labels: data.labels,
+        model_version: Map.get(data, :model_version, 1)
       )
 
     BinClass.Serving.new(data.model_params, tokenizer, serving_opts)

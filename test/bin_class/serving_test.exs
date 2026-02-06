@@ -8,7 +8,7 @@ defmodule BinClass.ServingTest do
     vocab_size = BinClass.Tokenizer.vocab_size()
 
     # Init params
-    model = BinClass.Model.build(vocab_size)
+    model = BinClass.Model.build(1, vocab_size)
     template = Nx.broadcast(0, {1, 16}) |> Nx.as_type(:u16)
     {init_fn, _} = Axon.build(model)
     params = init_fn.(template, Axon.ModelState.empty())
@@ -32,7 +32,7 @@ defmodule BinClass.ServingTest do
     vocab_size = BinClass.Tokenizer.vocab_size()
 
     # Init params
-    model = BinClass.Model.build(vocab_size)
+    model = BinClass.Model.build(1, vocab_size)
     template = Nx.broadcast(0, {1, 16}) |> Nx.as_type(:u16)
     {init_fn, _} = Axon.build(model)
     params = init_fn.(template, Axon.ModelState.empty())

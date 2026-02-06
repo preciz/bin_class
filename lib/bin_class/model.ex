@@ -1,16 +1,31 @@
 defmodule BinClass.Model do
-  def build(vocab_size, opts \\ []) do
-    embedding_size = Keyword.get(opts, :embedding_size, 64)
-    conv_filters = Keyword.get(opts, :conv_filters, 128)
-    dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
+  @moduledoc """
+  Dispatcher for model architectures.
 
-    Axon.input("input")
-    |> Axon.embedding(vocab_size, embedding_size)
-    |> Axon.dropout(rate: dropout_rate)
-    |> Axon.conv(conv_filters, kernel_size: 3, activation: :relu)
-    |> Axon.global_max_pool()
-    |> Axon.dense(64, activation: :relu)
-    |> Axon.dropout(rate: dropout_rate)
-    |> Axon.dense(2, activation: :softmax)
+  This module handles model versioning, ensuring that trained models can be
+  loaded even if the library's default architecture changes.
+
+  ## Adding a new version
+
+  1. Create a new module `BinClass.Model.V2` in `lib/bin_class/model/v2.ex`.
+  2. Implement `build/2` in that module.
+  3. Add a new clause to `BinClass.Model.build/3`:
+     ```elixir
+     def build(2, vocab_size, opts), do: BinClass.Model.V2.build(vocab_size, opts)
+     ```
+  4. Update `@model_version` in `BinClass.Trainer` to `2`.
+  """
+
+  @doc """
+  Builds the model architecture based on the version.
+  """
+  def build(version, vocab_size, opts \\ [])
+
+  def build(1, vocab_size, opts) do
+    BinClass.Model.V1.build(vocab_size, opts)
+  end
+
+  def build(version, _vocab_size, _opts) do
+    raise ArgumentError, "Unknown model version: #{version}"
   end
 end

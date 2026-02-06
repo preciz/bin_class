@@ -12,8 +12,9 @@ defmodule BinClass.Serving do
     batch_size = Keyword.get(opts, :batch_size, 16)
     compiler = Keyword.get(opts, :compiler, EXLA)
     defn_options = Keyword.get(opts, :defn_options, [])
+    model_version = Keyword.get(opts, :model_version, 1)
 
-    model = Model.build(vocab_size)
+    model = Model.build(model_version, vocab_size)
     {_, predict_fn} = Axon.build(model, compiler: compiler)
 
     Nx.Serving.new(

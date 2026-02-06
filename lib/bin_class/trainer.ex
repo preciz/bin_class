@@ -3,6 +3,7 @@ defmodule BinClass.Trainer do
   alias BinClass.{Model, Vectorizer, Tokenizer}
 
   @default_vector_length 256
+  @model_version 1
 
   def train(data_stream, opts \\ []) do
     tokenizer_data_stream = Keyword.get(opts, :tokenizer_data, Stream.map(data_stream, & &1.text))
@@ -67,7 +68,7 @@ defmodule BinClass.Trainer do
       |> Nx.to_batched(batch_size, leftover: :discard)
       |> Enum.split(train_batches_count)
 
-    build_model_fn = fn -> Model.build(vocab_size) end
+    build_model_fn = fn -> Model.build(@model_version, vocab_size) end
     optimizer = Polaris.Optimizers.adamw(learning_rate: learning_rate, decay: decay)
 
     train_model = Axon.Loop.trainer(build_model_fn.(), :categorical_cross_entropy, optimizer)
@@ -90,7 +91,8 @@ defmodule BinClass.Trainer do
       epoch: best_checkpoint.epoch,
       vector_length: vector_length,
       vocab_size: vocab_size,
-      labels: labels
+      labels: labels,
+      model_version: @model_version
     }
   end
 
