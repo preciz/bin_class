@@ -23,6 +23,6 @@ defmodule BinClass.TokenizerTest do
   end
 
   test "vocab size defaults" do
-    assert Tokenizer.vocab_size() == 10_000
+    assert Tokenizer.vocab_size() == 30_000
   end
 end

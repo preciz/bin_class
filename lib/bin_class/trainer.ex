@@ -100,7 +100,7 @@ defmodule BinClass.Trainer do
     sorted = Enum.sort(list)
     count = length(sorted)
     index = floor(count * 0.90)
-    Enum.at(sorted, index) |> max(1)
+    Enum.at(sorted, index) |> max(5)
   end
 
   defp balance_data(data_stream) do
