@@ -48,4 +48,32 @@ defmodule BinClass.ServingTest do
     assert Map.has_key?(result.probabilities, :neg)
     assert Map.has_key?(result.probabilities, :pos)
   end
+
+  test "Serving.new with custom options" do
+    data = ["hello"]
+    tokenizer = BinClass.Tokenizer.train(data)
+    vocab_size = BinClass.Tokenizer.vocab_size()
+    model = BinClass.Model.build(1, vocab_size)
+    {init_fn, _} = Axon.build(model)
+    params = init_fn.(Nx.broadcast(0, {1, 16}) |> Nx.as_type(:u16), Axon.ModelState.empty())
+
+    serving = Serving.new(params, tokenizer, 
+      batch_size: 4,
+      compiler: EXLA,
+      defn_options: [compiler: EXLA]
+    )
+    assert %Nx.Serving{} = serving
+  end
+
+  test "Serving.new with no options" do
+    data = ["hello"]
+    tokenizer = BinClass.Tokenizer.train(data)
+    vocab_size = BinClass.Tokenizer.vocab_size()
+    model = BinClass.Model.build(1, vocab_size)
+    {init_fn, _} = Axon.build(model)
+    params = init_fn.(Nx.broadcast(0, {1, 16}) |> Nx.as_type(:u16), Axon.ModelState.empty())
+
+    serving = Serving.new(params, tokenizer)
+    assert %Nx.Serving{} = serving
+  end
 end
