@@ -105,6 +105,37 @@ defmodule BinClass.TrainerTest do
     assert %BinClass.Classifier{} = result
   end
 
+  test "hyperparameter auto-tuning" do
+    data = [
+      %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "neg", label: 0},
+      %{text: "neg", label: 0},
+      %{text: "neg", label: 0},
+      %{text: "neg", label: 0},
+      %{text: "neg", label: 0},
+      %{text: "neg", label: 0},
+      %{text: "neg", label: 0},
+      %{text: "neg", label: 0},
+      %{text: "neg", label: 0},
+      %{text: "neg", label: 0}
+    ]
+
+    # We use a very small subset for tuning in the test to keep it fast
+    result = Trainer.train(data, epochs: 1, batch_size: 2, tune: true)
+    assert %BinClass.Classifier{} = result
+    assert result.learning_rate in [1.0e-2, 1.0e-3, 5.0e-4, 1.0e-4]
+    assert result.dropout_rate in [0.1, 0.2, 0.3, 0.4, 0.5]
+  end
+
   test "explicit vector_length" do
     data = [%{text: "a", label: 1}, %{text: "b", label: 0}]
     result = Trainer.train(data, epochs: 1, batch_size: 1, vector_length: 123)

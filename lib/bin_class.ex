@@ -54,7 +54,9 @@ defmodule BinClass do
       labels: classifier.labels,
       accuracy: classifier.accuracy,
       epoch: classifier.epoch,
-      model_version: classifier.model_version
+      model_version: classifier.model_version,
+      learning_rate: classifier.learning_rate,
+      dropout_rate: classifier.dropout_rate
     }
 
     :erlang.term_to_binary(data)
@@ -81,7 +83,9 @@ defmodule BinClass do
         vector_length: data.vector_length,
         vocab_size: data.vocab_size,
         labels: data.labels,
-        model_version: Map.get(data, :model_version, 1)
+        model_version: Map.get(data, :model_version, 1),
+        learning_rate: Map.get(data, :learning_rate),
+        dropout_rate: Map.get(data, :dropout_rate)
       )
 
     BinClass.Serving.new(data.model_params, tokenizer, serving_opts)

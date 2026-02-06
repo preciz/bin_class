@@ -16,6 +16,7 @@ defmodule BinClass.Trainer do
     patience = Keyword.get(opts, :patience, 5)
     compiler = Keyword.get(opts, :compiler, EXLA)
     model_version = Keyword.get(opts, :model_version, @model_version)
+    tune? = Keyword.get(opts, :tune, false)
 
     tokenizer = Tokenizer.train(tokenizer_data_stream)
     vocab_size = Tokenizer.vocab_size()
@@ -69,8 +70,26 @@ defmodule BinClass.Trainer do
       |> Nx.to_batched(batch_size, leftover: :discard)
       |> Enum.split(train_batches_count)
 
-    build_model_fn = fn -> Model.build(model_version, vocab_size) end
-    optimizer = Polaris.Optimizers.adamw(learning_rate: learning_rate, decay: decay)
+    {best_lr, best_dropout} =
+      if tune? do
+        tune_hyperparameters(
+          train_data,
+          train_labels,
+          test_data,
+          test_labels,
+          model_version,
+          vocab_size,
+          compiler
+        )
+      else
+        {learning_rate, Keyword.get(opts, :dropout_rate, 0.2)}
+      end
+
+    build_model_fn = fn ->
+      Model.build(model_version, vocab_size, dropout_rate: best_dropout)
+    end
+
+    optimizer = Polaris.Optimizers.adamw(learning_rate: best_lr, decay: decay)
 
     train_model = Axon.Loop.trainer(build_model_fn.(), :categorical_cross_entropy, optimizer)
 
@@ -93,8 +112,56 @@ defmodule BinClass.Trainer do
       vector_length: vector_length,
       vocab_size: vocab_size,
       labels: labels,
-      model_version: model_version
+      model_version: model_version,
+      learning_rate: best_lr,
+      dropout_rate: best_dropout
     }
+  end
+
+  defp tune_hyperparameters(
+         train_data,
+         train_labels,
+         test_data,
+         test_labels,
+         model_version,
+         vocab_size,
+         compiler
+       ) do
+    learning_rates = [1.0e-2, 1.0e-3, 5.0e-4, 1.0e-4]
+    dropout_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
+
+    tune_limit = max(1, floor(Enum.count(train_data) * 0.2))
+
+    tune_train_data =
+      Stream.zip(Enum.take(train_data, tune_limit), Enum.take(train_labels, tune_limit))
+
+    tune_test_data = Stream.zip(test_data, test_labels)
+
+    results =
+      for lr <- learning_rates, dr <- dropout_rates do
+        build_fn = fn -> Model.build(model_version, vocab_size, dropout_rate: dr) end
+        optimizer = Polaris.Optimizers.adamw(learning_rate: lr, decay: 1.0e-2)
+
+        model = build_fn.()
+        trainer = Axon.Loop.trainer(model, :categorical_cross_entropy, optimizer)
+
+        final_state =
+          trainer
+          |> Axon.Loop.validate(model, tune_test_data)
+          |> Axon.Loop.run(tune_train_data, %{},
+            epochs: 2,
+            compiler: compiler,
+            garbage_collect: true
+          )
+
+        accuracy = calculate_accuracy(model, final_state, tune_test_data, compiler)
+
+        %{lr: lr, dr: dr, accuracy: accuracy}
+      end
+
+    best = Enum.max_by(results, & &1.accuracy)
+
+    {best.lr, best.dr}
   end
 
   defp percentile_90([]), do: @default_vector_length

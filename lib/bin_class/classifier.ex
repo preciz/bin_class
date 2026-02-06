@@ -11,7 +11,9 @@ defmodule BinClass.Classifier do
     :vocab_size,
     :accuracy,
     :epoch,
-    :model_version
+    :model_version,
+    :learning_rate,
+    :dropout_rate
   ]
 
   defimpl Inspect do
@@ -27,7 +29,9 @@ defmodule BinClass.Classifier do
             vector_length: classifier.vector_length,
             vocab_size: classifier.vocab_size,
             accuracy: classifier.accuracy,
-            epoch: classifier.epoch
+            epoch: classifier.epoch,
+            learning_rate: classifier.learning_rate,
+            dropout_rate: classifier.dropout_rate
           },
           opts
         ),
