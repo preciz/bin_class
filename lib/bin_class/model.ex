@@ -29,6 +29,10 @@ defmodule BinClass.Model do
     BinClass.Model.V2.build(vocab_size, opts)
   end
 
+  def build(3, vocab_size, opts) do
+    BinClass.Model.V3.build(vocab_size, opts)
+  end
+
   def build(version, _vocab_size, _opts) do
     raise ArgumentError, "Unknown model version: #{version}"
   end
