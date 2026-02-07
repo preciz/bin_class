@@ -167,7 +167,7 @@ defmodule BinClass.Trainer do
         final_state =
           trainer
           |> Axon.Loop.validate(model, tune_test_data)
-          |> Axon.Loop.run(tune_train_data, %{},
+          |> Axon.Loop.run(tune_train_data, Axon.ModelState.empty(),
             epochs: 2,
             compiler: compiler,
             garbage_collect: true
