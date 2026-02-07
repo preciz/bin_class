@@ -75,7 +75,7 @@ defmodule BinClass do
   """
   def load(path, opts \\ []) do
     classifier = load_classifier(path)
-    
+
     serving_opts =
       Keyword.merge(opts,
         vector_length: classifier.vector_length,
@@ -155,7 +155,11 @@ defmodule BinClass do
     compiler = Keyword.get(opts, :compiler, EXLA)
     batch_size = Keyword.get(opts, :batch_size, 1)
 
-    model = BinClass.Model.build(classifier.model_version, classifier.vocab_size, dropout_rate: classifier.dropout_rate || 0.2)
+    model =
+      BinClass.Model.build(classifier.model_version, classifier.vocab_size,
+        dropout_rate: classifier.dropout_rate || 0.2
+      )
+
     {_, predict_fn} = Axon.build(model, compiler: compiler)
 
     # Compile the prediction function specifically for the given batch size

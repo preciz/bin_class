@@ -74,10 +74,11 @@ defmodule BinClassTest do
       %{text: "I love this!", label: 1},
       %{text: "I hate this!", label: 0}
     ]
+
     classifier = BinClass.Trainer.train(data, epochs: 1, batch_size: 2)
-    
+
     predictor = BinClass.compile_predictor(classifier, batch_size: 2)
-    
+
     result = predictor.("I love this!")
     assert %{label: _, confidence: _, probabilities: _} = result
     assert result.label in [0, 1]

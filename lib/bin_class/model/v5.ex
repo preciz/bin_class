@@ -15,7 +15,7 @@ defmodule BinClass.Model.V5 do
     # 3 Parallel branches with Kernels 1, 3, 5
     # 32 filters each (Total 96 filters)
     f = 32
-    
+
     b1 = embedded |> Axon.conv(f, kernel_size: 1, padding: :same, activation: :relu)
     b2 = embedded |> Axon.conv(f, kernel_size: 3, padding: :same, activation: :relu)
     b3 = embedded |> Axon.conv(f, kernel_size: 5, padding: :same, activation: :relu)
