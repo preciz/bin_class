@@ -3,7 +3,7 @@ defmodule BinClass.Trainer do
   alias BinClass.{Model, Vectorizer, Tokenizer}
 
   @default_vector_length 256
-  @model_version 4
+  @model_version 5
 
   @doc """
   Trains a binary classifier on the given data stream.
