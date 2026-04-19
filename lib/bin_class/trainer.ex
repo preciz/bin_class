@@ -1,5 +1,4 @@
 defmodule BinClass.Trainer do
-  require Explorer.Series
   alias BinClass.{Model, Vectorizer, Tokenizer}
 
   @default_vector_length 256

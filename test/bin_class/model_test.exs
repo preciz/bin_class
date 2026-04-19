@@ -24,7 +24,11 @@ defmodule BinClass.ModelTest do
 
     # Test custom opts
     model_opts =
-      Model.build(:cnn_mixed_pooling, vocab_size, embedding_size: 32, conv_filters: 64, dropout_rate: 0.1)
+      Model.build(:cnn_mixed_pooling, vocab_size,
+        embedding_size: 32,
+        conv_filters: 64,
+        dropout_rate: 0.1
+      )
 
     assert %Axon{} = model_opts
 
@@ -39,7 +43,11 @@ defmodule BinClass.ModelTest do
 
     # Test custom opts
     model_opts =
-      Model.build(:multi_scale_cnn, vocab_size, embedding_size: 32, branch_filters: 16, dropout_rate: 0.1)
+      Model.build(:multi_scale_cnn, vocab_size,
+        embedding_size: 32,
+        branch_filters: 16,
+        dropout_rate: 0.1
+      )
 
     assert %Axon{} = model_opts
 
@@ -54,7 +62,11 @@ defmodule BinClass.ModelTest do
 
     # Test custom opts
     model_opts =
-      Model.build(:sep_se_cnn, vocab_size, embedding_size: 32, branch_filters: 16, dropout_rate: 0.1)
+      Model.build(:sep_se_cnn, vocab_size,
+        embedding_size: 32,
+        branch_filters: 16,
+        dropout_rate: 0.1
+      )
 
     assert %Axon{} = model_opts
 
@@ -89,6 +101,7 @@ defmodule BinClass.ModelTest do
     assert_raise ArgumentError, "Unknown model version: 99", fn ->
       Model.build(99, 100)
     end
+
     assert_raise ArgumentError, "Unknown model version: :unknown", fn ->
       Model.build(:unknown, 100)
     end
