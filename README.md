@@ -13,7 +13,7 @@ The package can be installed by adding `bin_class` to your list of dependencies 
 ```elixir
 def deps do
   [
-    {:bin_class, "~> 0.1.0"}
+    {:bin_class, "~> 0.1.1"}
   ]
 end
 ```
