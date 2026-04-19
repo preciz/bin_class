@@ -1,4 +1,4 @@
-defmodule BinClass.Model.V5 do
+defmodule BinClass.Model.ParallelCnn do
   @moduledoc false
 
   def build(vocab_size, opts \\ []) do

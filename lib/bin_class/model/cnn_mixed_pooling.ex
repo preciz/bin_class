@@ -1,4 +1,4 @@
-defmodule BinClass.Model.V2 do
+defmodule BinClass.Model.CnnMixedPooling do
   @moduledoc false
 
   def build(vocab_size, opts \\ []) do

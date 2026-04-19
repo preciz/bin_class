@@ -2,82 +2,82 @@ defmodule BinClass.ModelTest do
   use ExUnit.Case
   alias BinClass.Model
 
-  test "builds version 1 model" do
+  test "builds cnn model" do
     vocab_size = 100
-    model = Model.build(1, vocab_size)
+    model = Model.build(:cnn, vocab_size)
     assert %Axon{} = model
 
     # Test custom opts
     model_opts =
-      Model.build(1, vocab_size, embedding_size: 32, conv_filters: 64, dropout_rate: 0.1)
+      Model.build(:cnn, vocab_size, embedding_size: 32, conv_filters: 64, dropout_rate: 0.1)
 
     assert %Axon{} = model_opts
 
-    # Direct call to V1
-    assert %Axon{} = BinClass.Model.V1.build(vocab_size)
+    # Direct call
+    assert %Axon{} = BinClass.Model.Cnn.build(vocab_size)
   end
 
-  test "builds version 2 model" do
+  test "builds cnn_mixed_pooling model" do
     vocab_size = 100
-    model = Model.build(2, vocab_size)
+    model = Model.build(:cnn_mixed_pooling, vocab_size)
     assert %Axon{} = model
 
     # Test custom opts
     model_opts =
-      Model.build(2, vocab_size, embedding_size: 32, conv_filters: 64, dropout_rate: 0.1)
+      Model.build(:cnn_mixed_pooling, vocab_size, embedding_size: 32, conv_filters: 64, dropout_rate: 0.1)
 
     assert %Axon{} = model_opts
 
-    # Direct call to V2
-    assert %Axon{} = BinClass.Model.V2.build(vocab_size)
+    # Direct call
+    assert %Axon{} = BinClass.Model.CnnMixedPooling.build(vocab_size)
   end
 
-  test "builds version 3 model" do
+  test "builds multi_scale_cnn model" do
     vocab_size = 100
-    model = Model.build(3, vocab_size)
+    model = Model.build(:multi_scale_cnn, vocab_size)
     assert %Axon{} = model
 
     # Test custom opts
     model_opts =
-      Model.build(3, vocab_size, embedding_size: 32, branch_filters: 16, dropout_rate: 0.1)
+      Model.build(:multi_scale_cnn, vocab_size, embedding_size: 32, branch_filters: 16, dropout_rate: 0.1)
 
     assert %Axon{} = model_opts
 
-    # Direct call to V3
-    assert %Axon{} = BinClass.Model.V3.build(vocab_size)
+    # Direct call
+    assert %Axon{} = BinClass.Model.MultiScaleCnn.build(vocab_size)
   end
 
-  test "builds version 4 model" do
+  test "builds sep_se_cnn model" do
     vocab_size = 100
-    model = Model.build(4, vocab_size)
+    model = Model.build(:sep_se_cnn, vocab_size)
     assert %Axon{} = model
 
     # Test custom opts
     model_opts =
-      Model.build(4, vocab_size, embedding_size: 32, branch_filters: 16, dropout_rate: 0.1)
+      Model.build(:sep_se_cnn, vocab_size, embedding_size: 32, branch_filters: 16, dropout_rate: 0.1)
 
     assert %Axon{} = model_opts
 
-    # Direct call to V4
-    assert %Axon{} = BinClass.Model.V4.build(vocab_size)
+    # Direct call
+    assert %Axon{} = BinClass.Model.SepSeCnn.build(vocab_size)
   end
 
-  test "builds version 5 model" do
+  test "builds parallel_cnn model" do
     vocab_size = 100
-    model = Model.build(5, vocab_size)
+    model = Model.build(:parallel_cnn, vocab_size)
     assert %Axon{} = model
 
     # Test custom opts
     model_opts =
-      Model.build(5, vocab_size, embedding_size: 32, dropout_rate: 0.1)
+      Model.build(:parallel_cnn, vocab_size, embedding_size: 32, dropout_rate: 0.1)
 
     assert %Axon{} = model_opts
 
-    # Direct call to V5
-    assert %Axon{} = BinClass.Model.V5.build(vocab_size)
+    # Direct call
+    assert %Axon{} = BinClass.Model.ParallelCnn.build(vocab_size)
   end
 
-  test "BinClass.Model dispatcher default opts" do
+  test "BinClass.Model dispatcher default opts and backwards compatibility" do
     assert %Axon{} = Model.build(1, 100)
     assert %Axon{} = Model.build(2, 100)
     assert %Axon{} = Model.build(3, 100)
@@ -88,6 +88,9 @@ defmodule BinClass.ModelTest do
   test "raises on unknown model version" do
     assert_raise ArgumentError, "Unknown model version: 99", fn ->
       Model.build(99, 100)
+    end
+    assert_raise ArgumentError, "Unknown model version: :unknown", fn ->
+      Model.build(:unknown, 100)
     end
   end
 end

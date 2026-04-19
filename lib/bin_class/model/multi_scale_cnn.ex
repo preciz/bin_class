@@ -1,4 +1,4 @@
-defmodule BinClass.Model.V3 do
+defmodule BinClass.Model.MultiScaleCnn do
   @moduledoc false
 
   def build(vocab_size, opts \\ []) do
