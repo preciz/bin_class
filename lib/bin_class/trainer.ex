@@ -24,6 +24,7 @@ defmodule BinClass.Trainer do
     * `:tokenizer_data` - Custom data stream to train the tokenizer. Defaults to the `:text` field of `data_stream`.
   """
   def train(data_stream, opts \\ []) do
+    clear_recompilation_counters()
     tokenizer_data_stream = Keyword.get(opts, :tokenizer_data, Stream.map(data_stream, & &1.text))
     epochs = Keyword.get(opts, :epochs, 10)
     batch_size = Keyword.get(opts, :batch_size, 32)
@@ -157,6 +158,7 @@ defmodule BinClass.Trainer do
 
     results =
       for lr <- learning_rates, dr <- dropout_rates do
+        clear_recompilation_counters()
         build_fn = fn -> Model.build(model_version, vocab_size, dropout_rate: dr) end
         optimizer = Polaris.Optimizers.adamw(learning_rate: lr, decay: 1.0e-2)
 
@@ -172,7 +174,8 @@ defmodule BinClass.Trainer do
             garbage_collect: true
           )
 
-        accuracy = calculate_accuracy(model, final_state, tune_test_data, compiler)
+        {_, predict_fn} = Axon.build(model, compiler: compiler)
+        accuracy = calculate_accuracy(predict_fn, final_state, tune_test_data)
 
         %{lr: lr, dr: dr, accuracy: accuracy}
       end
@@ -245,6 +248,7 @@ defmodule BinClass.Trainer do
       |> Axon.Loop.run(train_data, init_state, opts)
 
       model = build_model_fn.()
+      {_, predict_fn} = Axon.build(model, compiler: compiler)
 
       Path.wildcard(Path.join(checkpoints_dir, "*.ckpt"))
       |> Enum.map(fn checkpoint_path ->
@@ -253,7 +257,7 @@ defmodule BinClass.Trainer do
         checkpoint = File.read!(checkpoint_path) |> Axon.Loop.deserialize_state()
 
         accuracy =
-          calculate_accuracy(model, checkpoint.step_state.model_state, test_data, compiler)
+          calculate_accuracy(predict_fn, checkpoint.step_state.model_state, test_data)
 
         %{epoch: epoch, accuracy: accuracy, checkpoint: checkpoint}
       end)
@@ -261,13 +265,28 @@ defmodule BinClass.Trainer do
     end)
   end
 
-  defp calculate_accuracy(model, trained_model_state, test_data, compiler) do
-    model
-    |> Axon.Loop.evaluator()
-    |> Axon.Loop.metric(:accuracy, "accuracy")
-    |> Axon.Loop.run(test_data, trained_model_state, compiler: compiler)
-    |> Map.get(0)
-    |> Map.get("accuracy")
-    |> Nx.to_number()
+  defp calculate_accuracy(predict_fn, trained_model_state, test_data) do
+    {total_correct, total_count} =
+      Enum.reduce(test_data, {0, 0}, fn {inputs, labels}, {correct_acc, count_acc} ->
+        preds = predict_fn.(trained_model_state, inputs)
+
+        pred_labels = Nx.argmax(preds, axis: -1)
+        true_labels = Nx.argmax(labels, axis: -1)
+
+        correct = Nx.equal(pred_labels, true_labels) |> Nx.sum() |> Nx.to_number()
+        batch_size = Nx.shape(inputs) |> elem(0)
+
+        {correct_acc + correct, count_acc + batch_size}
+      end)
+
+    total_correct / total_count
+  end
+
+  defp clear_recompilation_counters do
+    if Code.ensure_loaded?(EXLA.Defn.LockedCache) and :ets.info(EXLA.Defn.LockedCache) != :undefined do
+      :ets.match_delete(EXLA.Defn.LockedCache, {{:counter, :_}, :_})
+    end
+  rescue
+    _ -> :ok
   end
 end
