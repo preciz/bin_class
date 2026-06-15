@@ -89,12 +89,28 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = BinClass.Model.ParallelCnn.build(vocab_size)
   end
 
+  test "builds transformer model" do
+    vocab_size = 100
+    model = Model.build(:transformer, vocab_size)
+    assert %Axon{} = model
+
+    # Test custom opts
+    model_opts =
+      Model.build(:transformer, vocab_size, embedding_size: 32, dropout_rate: 0.1)
+
+    assert %Axon{} = model_opts
+
+    # Direct call
+    assert %Axon{} = BinClass.Model.Transformer.build(vocab_size)
+  end
+
   test "BinClass.Model dispatcher default opts and backwards compatibility" do
     assert %Axon{} = Model.build(1, 100)
     assert %Axon{} = Model.build(2, 100)
     assert %Axon{} = Model.build(3, 100)
     assert %Axon{} = Model.build(4, 100)
     assert %Axon{} = Model.build(5, 100)
+    assert %Axon{} = Model.build(6, 100)
   end
 
   test "raises on unknown model version" do

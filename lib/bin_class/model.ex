@@ -41,12 +41,17 @@ defmodule BinClass.Model do
     BinClass.Model.ParallelCnn.build(vocab_size, opts)
   end
 
+  def build(:transformer, vocab_size, opts) do
+    BinClass.Model.Transformer.build(vocab_size, opts)
+  end
+
   # Backwards compatibility
   def build(1, vocab_size, opts), do: build(:cnn, vocab_size, opts)
   def build(2, vocab_size, opts), do: build(:cnn_mixed_pooling, vocab_size, opts)
   def build(3, vocab_size, opts), do: build(:multi_scale_cnn, vocab_size, opts)
   def build(4, vocab_size, opts), do: build(:sep_se_cnn, vocab_size, opts)
   def build(5, vocab_size, opts), do: build(:parallel_cnn, vocab_size, opts)
+  def build(6, vocab_size, opts), do: build(:transformer, vocab_size, opts)
 
   def build(version, _vocab_size, _opts) do
     raise ArgumentError, "Unknown model version: #{inspect(version)}"
