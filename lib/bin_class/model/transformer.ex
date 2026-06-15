@@ -21,9 +21,18 @@ defmodule BinClass.Model.Transformer do
     end, [non_pad_mask])
 
     # 2. Main Transformer Layers
-    embedded = 
-      input
-      |> Axon.embedding(vocab_size, embedding_size)
+    embedded_raw = Axon.embedding(input, vocab_size, embedding_size)
+
+    embedded =
+      Axon.layer(fn emb, _opts ->
+        {_batch, seq_len, emb_size} = Nx.shape(emb)
+        pos = Nx.iota({seq_len, 1}) |> Nx.as_type(:f32)
+        div_t = Nx.iota({1, emb_size}) |> Nx.as_type(:f32) |> Nx.divide(2) |> Nx.multiply(2) |> Nx.divide(emb_size) |> then(fn p -> Nx.pow(10000.0, p) end)
+        angle = Nx.divide(pos, div_t)
+        even = Nx.iota({1, emb_size}) |> Nx.remainder(2) |> Nx.equal(0) |> Nx.broadcast({seq_len, emb_size})
+        pos_emb = Nx.select(even, Nx.sin(angle), Nx.cos(angle)) |> Nx.new_axis(0)
+        Nx.add(emb, pos_emb)
+      end, [embedded_raw])
       |> Axon.dropout(rate: dropout_rate)
 
     # Self-attention Block
