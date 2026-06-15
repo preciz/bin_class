@@ -13,7 +13,7 @@ The package can be installed by adding `bin_class` to your list of dependencies 
 ```elixir
 def deps do
   [
-    {:bin_class, "~> 0.1.1"}
+    {:bin_class, "~> 0.1.3"}
   ]
 end
 ```
@@ -91,7 +91,7 @@ Check out the `examples/` directory for scripts demonstrating various use cases:
 - **Production Ready**: Built on `Nx.Serving` for automatic batching and process isolation.
 - **Unified Serialization**: Save and load the entire classifier state from a single file.
 - **Model Versioning**: Decouples model parameters from code changes by explicitly versioning architectures.
-- **CNN Architecture**: Uses **Sep-SE-CNN** (Separable Convolutions + Squeeze-and-Excitation) with multi-scale kernels (3, 4, 5-gram) and mixed pooling for state-of-the-art efficiency and accuracy.
+- **Multiple Architectures**: Supports **Sep-SE-CNN** (Separable Convolutions + Squeeze-and-Excitation) with multi-scale kernels and a high-accuracy **Transformer Encoder** architecture with sequence length logit bias.
 - **Early Stopping**: Automatically halts training when validation loss stops improving.
 - **Automatic Class Balancing**: Handles imbalanced datasets via automated oversampling.
 - **Automated Tokenization**: Automatically builds vocabulary from training data or accepts custom streams.
