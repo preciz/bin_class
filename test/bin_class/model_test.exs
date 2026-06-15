@@ -104,6 +104,40 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = BinClass.Model.Transformer.build(vocab_size)
   end
 
+  test "transformer model execution and logit bias penalty" do
+    vocab_size = 50
+    model = BinClass.Model.Transformer.build(vocab_size,
+      embedding_size: 8,
+      ff_dim: 16,
+      min_tokens: 3,
+      dropout_rate: 0.0
+    )
+
+    {init_fn, predict_fn} = Axon.build(model)
+    template = Nx.broadcast(0, {1, 5}) |> Nx.as_type(:u16)
+    params = init_fn.(template, Axon.ModelState.empty())
+
+    # Case 1: Short input (only 1 active token [1, 0, 0, 0, 0])
+    short_input = Nx.tensor([[1, 0, 0, 0, 0]], type: :u16)
+    preds_short = predict_fn.(params, short_input)
+    assert Nx.shape(preds_short) == {1, 2}
+
+    # For short inputs, class 1 is penalized by 1000.0, so class 0 probability should be ~1.0
+    [p0, p1] = preds_short[0] |> Nx.to_list()
+    assert p0 > 0.999
+    assert p1 < 0.001
+
+    # Case 2: Long input (4 active tokens [1, 2, 3, 4, 0])
+    long_input = Nx.tensor([[1, 2, 3, 4, 0]], type: :u16)
+    preds_long = predict_fn.(params, long_input)
+    assert Nx.shape(preds_long) == {1, 2}
+
+    # No penalty, so probabilities should be valid and positive
+    [lp0, lp1] = preds_long[0] |> Nx.to_list()
+    assert lp0 > 0.0
+    assert lp1 > 0.0
+  end
+
   test "BinClass.Model dispatcher default opts and backwards compatibility" do
     assert %Axon{} = Model.build(1, 100)
     assert %Axon{} = Model.build(2, 100)
