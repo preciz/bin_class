@@ -75,7 +75,7 @@ defmodule BinClassTest do
       %{text: "I hate this!", label: 0}
     ]
 
-    classifier = BinClass.Trainer.train(data, epochs: 1, batch_size: 2)
+    classifier = BinClass.Trainer.train(data, epochs: 1, batch_size: 2, vector_length: 16)
 
     predictor = BinClass.compile_predictor(classifier, batch_size: 2)
 

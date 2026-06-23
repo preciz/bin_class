@@ -6,7 +6,7 @@ defmodule BinClass.Serving do
   alias BinClass.{Model, Vectorizer, Tokenizer}
 
   def new(model_params, tokenizer, opts \\ []) do
-    vector_length = Keyword.get(opts, :vector_length, 256)
+    vector_length = Keyword.get(opts, :vector_length, 512)
     vocab_size = Keyword.get(opts, :vocab_size, Tokenizer.vocab_size())
     labels = Keyword.get(opts, :labels, [0, 1])
     batch_size = Keyword.get(opts, :batch_size, 16)

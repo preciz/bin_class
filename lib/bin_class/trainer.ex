@@ -1,7 +1,7 @@
 defmodule BinClass.Trainer do
   alias BinClass.{Model, Vectorizer, Tokenizer}
 
-  @default_vector_length 256
+  @default_vector_length 512
   @model_version :sep_se_cnn
 
   @doc """
@@ -20,7 +20,7 @@ defmodule BinClass.Trainer do
     * `:model_version` - The architecture version to use. Defaults to `#{@model_version}`.
     * `:tune` - If `true`, performs automatic hyperparameter tuning for learning rate and dropout. Defaults to `false`.
     * `:dropout_rate` - Dropout rate for the model (ignored if `:tune` is `true`). Defaults to `0.2`.
-    * `:vector_length` - Fixed sequence length for tokenization. If not provided, it is automatically calculated from data.
+    * `:vector_length` - Fixed sequence length for tokenization. Defaults to `512`.
     * `:tokenizer_data` - Custom data stream to train the tokenizer. Defaults to the `:text` field of `data_stream`.
   """
   def train(data_stream, opts \\ []) do
@@ -40,22 +40,7 @@ defmodule BinClass.Trainer do
     tokenizer = Tokenizer.train(tokenizer_data_stream)
     vocab_size = Tokenizer.vocab_size()
 
-    vector_length =
-      case Keyword.get(opts, :vector_length) do
-        nil ->
-          lengths =
-            data_stream
-            |> Stream.map(fn %{text: text} ->
-              {:ok, encoding} = Tokenizers.Tokenizer.encode(tokenizer, text)
-              length(Tokenizers.Encoding.get_ids(encoding))
-            end)
-            |> Enum.to_list()
-
-          percentile_90(lengths)
-
-        val ->
-          val
-      end
+    vector_length = Keyword.get(opts, :vector_length, @default_vector_length)
 
     data_stream = balance_data(data_stream)
     df = Explorer.DataFrame.new(data_stream) |> Explorer.DataFrame.shuffle()
@@ -185,15 +170,6 @@ defmodule BinClass.Trainer do
     {best.lr, best.dr}
   end
 
-  defp percentile_90([]), do: @default_vector_length
-
-  defp percentile_90(list) do
-    sorted = Enum.sort(list)
-    count = length(sorted)
-    index = floor(count * 0.90)
-    Enum.at(sorted, index) |> max(5)
-  end
-
   defp balance_data(data_stream) do
     data = Enum.to_list(data_stream)
     {class_0, class_1} = Enum.split_with(data, &(&1.label == 0))
@@ -283,7 +259,8 @@ defmodule BinClass.Trainer do
   end
 
   defp clear_recompilation_counters do
-    if Code.ensure_loaded?(EXLA.Defn.LockedCache) and :ets.info(EXLA.Defn.LockedCache) != :undefined do
+    if Code.ensure_loaded?(EXLA.Defn.LockedCache) and
+         :ets.info(EXLA.Defn.LockedCache) != :undefined do
       :ets.match_delete(EXLA.Defn.LockedCache, {{:counter, :_}, :_})
     end
   rescue

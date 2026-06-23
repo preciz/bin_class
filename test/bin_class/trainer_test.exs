@@ -10,7 +10,7 @@ defmodule BinClass.TrainerTest do
       %{text: "neg", label: 0}
     ]
 
-    result = Trainer.train(data_c1_gt_c0, epochs: 1, batch_size: 1)
+    result = Trainer.train(data_c1_gt_c0, epochs: 1, batch_size: 1, vector_length: 8)
     assert %BinClass.Classifier{} = result
     assert result.accuracy >= 0
 
@@ -21,7 +21,7 @@ defmodule BinClass.TrainerTest do
       %{text: "pos", label: 1}
     ]
 
-    result = Trainer.train(data_c0_gt_c1, epochs: 1, batch_size: 1)
+    result = Trainer.train(data_c0_gt_c1, epochs: 1, batch_size: 1, vector_length: 8)
     assert %BinClass.Classifier{} = result
     assert result.accuracy >= 0
 
@@ -31,7 +31,7 @@ defmodule BinClass.TrainerTest do
       %{text: "pos", label: 1}
     ]
 
-    result = Trainer.train(data_equal, epochs: 1, batch_size: 1)
+    result = Trainer.train(data_equal, epochs: 1, batch_size: 1, vector_length: 8)
     assert %BinClass.Classifier{} = result
     assert result.accuracy >= 0
 
@@ -49,33 +49,20 @@ defmodule BinClass.TrainerTest do
       %{text: "pos", label: 1}
     ]
 
-    result = Trainer.train(data_one_zero, epochs: 1, batch_size: 1)
+    result = Trainer.train(data_one_zero, epochs: 1, batch_size: 1, vector_length: 8)
     assert %BinClass.Classifier{} = result
     assert result.accuracy >= 0
   end
 
-  test "percentile_90/1 edge cases" do
+  test "default vector_length is 512" do
     data = [
       %{text: "a", label: 1},
-      %{text: "a", label: 1},
-      %{text: "a", label: 1},
-      %{text: "a", label: 1},
-      %{text: "a", label: 1},
-      %{text: "a", label: 1},
-      %{text: "a", label: 1},
-      %{text: "a", label: 1},
-      %{text: "a", label: 1},
-      %{text: "a", label: 1}
+      %{text: "b", label: 0}
     ]
 
     result = Trainer.train(data, epochs: 1, batch_size: 1)
     assert %BinClass.Classifier{} = result
-    # min(sorted_at_index, 5) where index is floor(10 * 0.9) = 9
-    assert result.vector_length == 5
-
-    # We can't easily test percentile_90([]) through train because it trains a tokenizer first
-    # but we can trust it if we add a unit test if we had access to private fns.
-    # Since we don't, I'll just ensure data with empty strings or something doesn't break it.
+    assert result.vector_length == 512
   end
 
   test "trainer with custom options" do
@@ -99,7 +86,8 @@ defmodule BinClass.TrainerTest do
         learning_rate: 0.01,
         decay: 0.1,
         validation_split: 0.2,
-        patience: 2
+        patience: 2,
+        vector_length: 8
       )
 
     assert %BinClass.Classifier{} = result
@@ -130,7 +118,7 @@ defmodule BinClass.TrainerTest do
     ]
 
     # We use a very small subset for tuning in the test to keep it fast
-    result = Trainer.train(data, epochs: 1, batch_size: 2, tune: true)
+    result = Trainer.train(data, epochs: 1, batch_size: 2, tune: true, vector_length: 8)
     assert %BinClass.Classifier{} = result
     assert result.learning_rate in [1.0e-2, 1.0e-3, 5.0e-4, 1.0e-4]
     assert result.dropout_rate in [0.1, 0.2, 0.3, 0.4, 0.5]
@@ -146,7 +134,15 @@ defmodule BinClass.TrainerTest do
   test "custom tokenizer data" do
     data = [%{text: "a", label: 1}, %{text: "b", label: 0}]
     tokenizer_data = ["a", "b", "c"]
-    result = Trainer.train(data, tokenizer_data: tokenizer_data, epochs: 1, batch_size: 1)
+
+    result =
+      Trainer.train(data,
+        tokenizer_data: tokenizer_data,
+        epochs: 1,
+        batch_size: 1,
+        vector_length: 8
+      )
+
     assert %BinClass.Classifier{} = result
     assert result.accuracy >= 0
   end
@@ -154,7 +150,7 @@ defmodule BinClass.TrainerTest do
   test "custom compiler" do
     data = [%{text: "a", label: 1}, %{text: "b", label: 0}]
     # We use EXLA explicitly
-    result = Trainer.train(data, epochs: 1, batch_size: 1, compiler: EXLA)
+    result = Trainer.train(data, epochs: 1, batch_size: 1, compiler: EXLA, vector_length: 8)
     assert %BinClass.Classifier{} = result
     assert result.accuracy >= 0
   end
