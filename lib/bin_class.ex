@@ -64,7 +64,8 @@ defmodule BinClass do
       epoch: classifier.epoch,
       model_version: classifier.model_version,
       learning_rate: classifier.learning_rate,
-      dropout_rate: classifier.dropout_rate
+      dropout_rate: classifier.dropout_rate,
+      decision_policy: classifier.decision_policy
     }
 
     :erlang.term_to_binary(data)
@@ -82,7 +83,8 @@ defmodule BinClass do
         vocab_size: classifier.vocab_size,
         labels: classifier.labels,
         model_version: classifier.model_version,
-        dropout_rate: classifier.dropout_rate || 0.2
+        dropout_rate: classifier.dropout_rate || 0.2,
+        decision_policy: classifier.decision_policy
       )
 
     BinClass.Serving.new(classifier.model_params, classifier.tokenizer, serving_opts)
@@ -100,7 +102,8 @@ defmodule BinClass do
         vocab_size: classifier.vocab_size,
         labels: classifier.labels,
         model_version: classifier.model_version,
-        dropout_rate: classifier.dropout_rate || 0.2
+        dropout_rate: classifier.dropout_rate || 0.2,
+        decision_policy: classifier.decision_policy
       )
 
     BinClass.Serving.new(classifier.model_params, classifier.tokenizer, serving_opts)
@@ -132,7 +135,8 @@ defmodule BinClass do
       epoch: Map.get(data, :epoch),
       model_version: Map.get(data, :model_version, 1),
       learning_rate: Map.get(data, :learning_rate),
-      dropout_rate: Map.get(data, :dropout_rate, 0.2)
+      dropout_rate: Map.get(data, :dropout_rate, 0.2),
+      decision_policy: Map.get(data, :decision_policy)
     }
   end
 
@@ -162,6 +166,11 @@ defmodule BinClass do
 
     {_, predict_fn} = Axon.build(model, compiler: compiler)
 
+    policy =
+      classifier.decision_policy || BinClass.Serving.decision_policy(classifier.model_version)
+
+    use_decision_policy? = BinClass.Serving.decision_policy?(classifier.model_version)
+
     # Compile the prediction function specifically for the given batch size
     template = Nx.broadcast(0, {batch_size, classifier.vector_length}) |> Nx.as_type(:u16)
 
@@ -181,12 +190,19 @@ defmodule BinClass do
           Enum.take(texts, batch_size)
         end
 
-      batch_tensor =
+      vectors =
         batch_texts
         |> Enum.map(fn text ->
           BinClass.Vectorizer.build(classifier.tokenizer, text, classifier.vector_length)
-          |> Nx.tensor(type: :u16)
         end)
+
+      active_lengths =
+        vectors
+        |> Enum.map(fn vector -> Enum.count(vector, &(&1 != 0)) end)
+
+      batch_tensor =
+        vectors
+        |> Enum.map(&Nx.tensor(&1, type: :u16))
         |> Nx.Batch.stack()
 
       # Run inference directly
@@ -199,7 +215,20 @@ defmodule BinClass do
         batch_output
         |> Nx.to_list()
         |> Enum.take(length(texts))
-        |> Enum.map(fn probs -> BinClass.Serving.decode_prediction(probs, classifier.labels) end)
+        |> Enum.zip(active_lengths)
+        |> Enum.map(fn {probs, active_length} ->
+          if use_decision_policy? do
+            BinClass.Serving.decode_prediction(
+              probs,
+              classifier.labels,
+              policy.positive_threshold,
+              active_length,
+              policy.min_positive_tokens
+            )
+          else
+            BinClass.Serving.decode_prediction(probs, classifier.labels)
+          end
+        end)
 
       if multi?, do: results, else: List.first(results)
     end

@@ -13,7 +13,8 @@ defmodule BinClass.Classifier do
     :epoch,
     :model_version,
     :learning_rate,
-    :dropout_rate
+    :dropout_rate,
+    :decision_policy
   ]
 
   defimpl Inspect do
@@ -31,7 +32,8 @@ defmodule BinClass.Classifier do
             accuracy: classifier.accuracy,
             epoch: classifier.epoch,
             learning_rate: classifier.learning_rate,
-            dropout_rate: classifier.dropout_rate
+            dropout_rate: classifier.dropout_rate,
+            decision_policy: classifier.decision_policy
           },
           opts
         ),

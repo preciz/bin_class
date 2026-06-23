@@ -14,6 +14,14 @@ defmodule BinClass.Serving do
     defn_options = Keyword.get(opts, :defn_options, [])
     model_version = Keyword.get(opts, :model_version, 1)
     dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
+    policy = Keyword.get(opts, :decision_policy) || decision_policy(model_version)
+    positive_threshold = Keyword.get(opts, :positive_threshold, policy.positive_threshold)
+    min_positive_tokens = Keyword.get(opts, :min_positive_tokens, policy.min_positive_tokens)
+
+    use_decision_policy? =
+      decision_policy?(model_version) or Keyword.has_key?(opts, :decision_policy) or
+        Keyword.has_key?(opts, :positive_threshold) or
+        Keyword.has_key?(opts, :min_positive_tokens)
 
     model = Model.build(model_version, vocab_size, dropout_rate: dropout_rate)
     {_, predict_fn} = Axon.build(model, compiler: compiler)
@@ -33,22 +41,42 @@ defmodule BinClass.Serving do
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = validate_input(input)
 
-      batch =
+      vectors =
         texts
-        |> Enum.map(fn text ->
-          Vectorizer.build(tokenizer, text, vector_length)
-          |> Nx.tensor(type: :u16)
+        |> Enum.map(&Vectorizer.build(tokenizer, &1, vector_length))
+
+      active_lengths =
+        Enum.map(vectors, fn vector ->
+          Enum.count(vector, &(&1 != 0))
         end)
+
+      batch =
+        vectors
+        |> Enum.map(&Nx.tensor(&1, type: :u16))
         |> Nx.Batch.stack()
 
-      {batch, multi?}
+      {batch, {multi?, active_lengths}}
     end)
-    |> Nx.Serving.client_postprocessing(fn {batch_output, _server_info}, multi? ->
+    |> Nx.Serving.client_postprocessing(fn {batch_output, _server_info},
+                                           {multi?, active_lengths} ->
       # batch_output is [batch_size, 2]
       results =
         batch_output
         |> Nx.to_list()
-        |> Enum.map(fn probs -> decode_prediction(probs, labels) end)
+        |> Enum.zip(active_lengths)
+        |> Enum.map(fn {probs, active_length} ->
+          if use_decision_policy? do
+            decode_prediction(
+              probs,
+              labels,
+              positive_threshold,
+              active_length,
+              min_positive_tokens
+            )
+          else
+            decode_prediction(probs, labels)
+          end
+        end)
 
       if multi?, do: results, else: List.first(results)
     end)
@@ -62,7 +90,24 @@ defmodule BinClass.Serving do
   def decode_prediction(probs, labels) do
     max_prob = Enum.max(probs)
     max_index = Enum.find_index(probs, &(&1 == max_prob))
+    build_prediction(probs, labels, max_index, max_prob)
+  end
 
+  @doc false
+  def decode_prediction(probs, labels, positive_threshold, active_length, min_positive_tokens) do
+    positive_prob = Enum.at(probs, 1)
+
+    max_index =
+      if positive_prob >= positive_threshold and active_length >= min_positive_tokens do
+        1
+      else
+        0
+      end
+
+    build_prediction(probs, labels, max_index, Enum.at(probs, max_index))
+  end
+
+  defp build_prediction(probs, labels, max_index, max_prob) do
     label =
       if is_map(labels) do
         Map.get(labels, max_index)
@@ -85,4 +130,21 @@ defmodule BinClass.Serving do
       probabilities: probabilities
     }
   end
+
+  @doc false
+  def decision_policy(model_version) do
+    %{
+      positive_threshold: positive_threshold(model_version),
+      min_positive_tokens: min_positive_tokens(model_version)
+    }
+  end
+
+  @doc false
+  def decision_policy?(model_version), do: model_version in [7, :conservative_cnn]
+
+  defp positive_threshold(model_version) when model_version in [7, :conservative_cnn], do: 0.6
+  defp positive_threshold(_model_version), do: 0.5
+
+  defp min_positive_tokens(model_version) when model_version in [7, :conservative_cnn], do: 64
+  defp min_positive_tokens(_model_version), do: 0
 end

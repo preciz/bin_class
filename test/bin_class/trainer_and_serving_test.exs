@@ -33,10 +33,14 @@ defmodule BinClass.TrainerAndServingTest do
     assert result.model_params
     assert result.accuracy
     assert result.epoch >= 0
+    assert %{positive_threshold: _, min_positive_tokens: 64} = result.decision_policy
 
     BinClass.Tmp.with_tmp_dir(fn dir ->
       model_path = Path.join(dir, "model.bin")
       BinClass.save(result, model_path)
+
+      loaded_classifier = BinClass.load_classifier(model_path)
+      assert loaded_classifier.decision_policy == result.decision_policy
 
       serving = BinClass.load(model_path)
 
@@ -53,5 +57,25 @@ defmodule BinClass.TrainerAndServingTest do
       batch_predictions = Nx.Serving.run(serving, ["happy", "sad"])
       assert length(batch_predictions) == 2
     end)
+  end
+
+  test "deserializes classifiers saved before decision policy existed" do
+    data = [
+      %{text: "positive feeling good happy", label: 1},
+      %{text: "negative feeling bad sad", label: 0}
+    ]
+
+    classifier = Trainer.train(data, epochs: 1, batch_size: 1, vector_length: 8)
+
+    old_binary =
+      classifier
+      |> BinClass.serialize()
+      |> :erlang.binary_to_term()
+      |> Map.delete(:decision_policy)
+      |> :erlang.term_to_binary()
+
+    loaded = BinClass.deserialize_classifier(old_binary)
+    assert %BinClass.Classifier{} = loaded
+    assert loaded.decision_policy == nil
   end
 end

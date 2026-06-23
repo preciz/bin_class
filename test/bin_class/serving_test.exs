@@ -78,4 +78,25 @@ defmodule BinClass.ServingTest do
     serving = Serving.new(params, tokenizer)
     assert %Nx.Serving{} = serving
   end
+
+  test "v7 decision policy is conservative for uncertain and low-signal positives" do
+    labels = %{0 => :negative, 1 => :positive}
+    policy = Serving.decision_policy(7)
+
+    refute Serving.decision_policy?(1)
+    assert Serving.decision_policy?(7)
+    assert policy.positive_threshold == 0.6
+    assert policy.min_positive_tokens == 64
+
+    assert %{label: :negative} =
+             Serving.decode_prediction([0.45, 0.55], labels, 0.6, 128, 64)
+
+    assert %{label: :negative} =
+             Serving.decode_prediction([0.1, 0.9], labels, 0.6, 32, 64)
+
+    assert %{label: :positive} =
+             Serving.decode_prediction([0.35, 0.65], labels, 0.6, 128, 64)
+
+    assert %{label: :positive} = Serving.decode_prediction([0.35, 0.65], labels)
+  end
 end
