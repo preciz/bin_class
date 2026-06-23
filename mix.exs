@@ -55,7 +55,7 @@ defmodule BinClass.MixProject do
       main: "BinClass",
       source_ref: "v#{@version}",
       source_url: @github,
-      extras: ["README.md"]
+      extras: ["README.md", "CHANGELOG.md"]
     ]
   end
 end
