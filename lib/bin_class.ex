@@ -18,6 +18,10 @@ defmodule BinClass do
         labels: %{0 => :negative, 1 => :positive}
       )
 
+      # The default model is v7 (:conservative_cnn). It uses a 512-token
+      # vector length, false-positive-aware checkpoint selection, and
+      # persisted threshold calibration.
+
       # Save the model
       BinClass.save(classifier, "model.bin")
 
@@ -49,6 +53,11 @@ defmodule BinClass do
 
   @doc """
   Serializes the classifier to a binary.
+
+  The serialized data includes tokenizer state, model parameters, labels,
+  vector length, model version, training metadata, and any calibrated
+  decision policy. Classifiers saved before decision policies existed remain
+  readable via `deserialize_classifier/1`.
   """
   def serialize(%BinClass.Classifier{} = classifier) do
     # Ensure model params are on Binary backend for safe serialization
@@ -119,6 +128,9 @@ defmodule BinClass do
 
   @doc """
   Deserializes a saved model from a binary and returns a BinClass.Classifier struct.
+
+  Older binaries that do not contain `:decision_policy` load with
+  `decision_policy: nil` and use version defaults at inference time.
   """
   def deserialize_classifier(binary) when is_binary(binary) do
     data = :erlang.binary_to_term(binary)

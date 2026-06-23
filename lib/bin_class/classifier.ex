@@ -1,6 +1,10 @@
 defmodule BinClass.Classifier do
   @moduledoc """
   A struct representing a trained binary classifier.
+
+  The optional `:decision_policy` field stores calibrated inference settings
+  such as `:positive_threshold` and `:min_positive_tokens`. It is persisted
+  with newly serialized classifiers and may be `nil` for older saved models.
   """
 
   defstruct [

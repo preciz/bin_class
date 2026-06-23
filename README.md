@@ -35,19 +35,24 @@ data = [
 ### 2. Train the model
 
 ```elixir
-# Labels can be a list (index 0 and 1) or an explicit map
+# Labels can be a list (index 0 and 1) or an explicit map.
+# The default model is v7, a conservative CNN optimized to reduce false positives.
 classifier = BinClass.Trainer.train(data,
   epochs: 10,
   labels: %{0 => :negative, 1 => :positive}
 )
 
-# Optional: Enable auto-tuning to find the best Learning Rate and Dropout
+# Optional: enable auto-tuning to search learning rate and dropout.
+# For production training, tune: false is usually preferred unless you have
+# a stable validation split and enough data.
 classifier = BinClass.Trainer.train(data, tune: true)
 ```
 
+By default, training uses a fixed token vector length of `512`.
+
 ### 3. Save and Load
 
-You can save the entire model (including tokenizer, parameters, and metadata) to a single file.
+You can save the entire model (including tokenizer, parameters, decision policy, and metadata) to a single file.
 
 ```elixir
 BinClass.save(classifier, "my_model.bin")
@@ -89,10 +94,42 @@ Check out the `examples/` directory for scripts demonstrating various use cases:
 ## Features
 
 - **Production Ready**: Built on `Nx.Serving` for automatic batching and process isolation.
-- **Unified Serialization**: Save and load the entire classifier state from a single file.
+- **Unified Serialization**: Save and load the entire classifier state, including tokenizer, model parameters, and calibrated decision policy, from a single file.
 - **Model Versioning**: Decouples model parameters from code changes by explicitly versioning architectures.
-- **Multiple Architectures**: Supports **Sep-SE-CNN** (Separable Convolutions + Squeeze-and-Excitation) with multi-scale kernels and a high-accuracy **Transformer Encoder** architecture with sequence length logit bias.
+- **Multiple Architectures**: Supports legacy CNN variants, **Sep-SE-CNN** (Separable Convolutions + Squeeze-and-Excitation), **Transformer Encoder**, and v7 **Conservative CNN**.
+- **Conservative v7 Default**: Uses a v1-style CNN backbone with false-positive-aware checkpoint selection, low-signal safeguards, and persisted threshold calibration.
 - **Early Stopping**: Automatically halts training when validation loss stops improving.
 - **Automatic Class Balancing**: Handles imbalanced datasets via automated oversampling.
 - **Automated Tokenization**: Automatically builds vocabulary from training data or accepts custom streams.
 - **Efficient**: Uses `EXLA` as the default compiler for high-performance training and inference, with support for other `Nx` backends and compilers.
+
+## Model Versions
+
+Models are versioned so saved classifiers keep loading even when the library default changes:
+
+- `1` / `:cnn`: original CNN
+- `2` / `:cnn_mixed_pooling`: CNN with mixed pooling
+- `3` / `:multi_scale_cnn`: multi-scale CNN
+- `4` / `:sep_se_cnn`: separable CNN with squeeze-and-excitation
+- `5` / `:parallel_cnn`: parallel CNN
+- `6` / `:transformer`: transformer encoder
+- `7` / `:conservative_cnn`: conservative CNN default
+
+v7 is based on the original simple CNN backbone, with production behavior tuned for cases where false positives are more costly than false negatives. It selects checkpoints using a false-positive penalty and stores a calibrated positive threshold in the serialized classifier.
+
+## Production Notes
+
+For production training, start with the defaults unless you have a specific validation strategy:
+
+```elixir
+classifier = BinClass.Trainer.train(data,
+  epochs: 10,
+  tune: false,
+  model_version: :conservative_cnn,
+  vector_length: 512,
+  false_positive_penalty: 0.5,
+  calibrate_threshold: true
+)
+```
+
+The calibrated `decision_policy` is saved with the model and reused by both `BinClass.load/2` and `BinClass.compile_predictor/2`. Older serialized models that do not include this field still load normally and fall back to their version defaults.

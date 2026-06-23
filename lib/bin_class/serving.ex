@@ -5,6 +5,20 @@ defmodule BinClass.Serving do
 
   alias BinClass.{Model, Vectorizer, Tokenizer}
 
+  @doc """
+  Builds an `Nx.Serving` for classifier inference.
+
+  Important options:
+
+    * `:model_version` - Model architecture version. Defaults to `1` for
+      backward compatibility.
+    * `:decision_policy` - Optional persisted policy from a trained classifier.
+      v7 uses this for calibrated positive thresholds and low-signal safeguards.
+    * `:positive_threshold` - Override the positive class threshold.
+    * `:min_positive_tokens` - Override the minimum active-token count needed
+      for a positive v7 prediction.
+    * `:vector_length` - Fixed input length. Defaults to `512`.
+  """
   def new(model_params, tokenizer, opts \\ []) do
     vector_length = Keyword.get(opts, :vector_length, 512)
     vocab_size = Keyword.get(opts, :vocab_size, Tokenizer.vocab_size())
