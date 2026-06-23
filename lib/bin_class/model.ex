@@ -13,7 +13,7 @@ defmodule BinClass.Model do
      ```elixir
      def build(:new_arch, vocab_size, opts), do: BinClass.Model.NewArch.build(vocab_size, opts)
      ```
-  4. Update `@model_version` in `BinClass.Trainer` to `:new_arch`.
+  4. Update `@model_version` in `BinClass.Trainer` to `:new_arch` if it should become the default.
   """
 
   @doc """
@@ -45,6 +45,10 @@ defmodule BinClass.Model do
     BinClass.Model.Transformer.build(vocab_size, opts)
   end
 
+  def build(:conservative_cnn, vocab_size, opts) do
+    BinClass.Model.ConservativeCnn.build(vocab_size, opts)
+  end
+
   # Backwards compatibility
   def build(1, vocab_size, opts), do: build(:cnn, vocab_size, opts)
   def build(2, vocab_size, opts), do: build(:cnn_mixed_pooling, vocab_size, opts)
@@ -52,6 +56,7 @@ defmodule BinClass.Model do
   def build(4, vocab_size, opts), do: build(:sep_se_cnn, vocab_size, opts)
   def build(5, vocab_size, opts), do: build(:parallel_cnn, vocab_size, opts)
   def build(6, vocab_size, opts), do: build(:transformer, vocab_size, opts)
+  def build(7, vocab_size, opts), do: build(:conservative_cnn, vocab_size, opts)
 
   def build(version, _vocab_size, _opts) do
     raise ArgumentError, "Unknown model version: #{inspect(version)}"
