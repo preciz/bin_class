@@ -34,8 +34,8 @@ defmodule BinClass.MixProject do
   defp deps do
     [
       {:axon, "~> 0.8"},
-      {:exla, "~> 0.12.0"},
-      {:nx, "~> 0.12.0"},
+      {:exla, "~> 0.13.1"},
+      {:nx, "~> 0.13.1"},
       {:tokenizers, "~> 0.5"},
       {:explorer, "~> 0.11"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false}
