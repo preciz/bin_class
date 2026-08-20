@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.1] - 2026-08-20
+
+### Changed
+
+- Updated Nx and EXLA to `0.13.1`.
+
+### Validation
+
+- Verified the complete test suite and one-epoch EXLA training with all seven supplied `.bin` training fixtures.
+
 ## [0.2.0] - 2026-06-23
 
 ### Added
@@ -87,7 +97,8 @@ All notable changes to this project are documented in this file.
 
 - Added and refined README, examples documentation, and module documentation for the initial Hex release.
 
-[0.2.0]: https://github.com/preciz/bin_class/compare/v0.1.3...HEAD
+[0.2.1]: https://github.com/preciz/bin_class/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/preciz/bin_class/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/preciz/bin_class/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/preciz/bin_class/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/preciz/bin_class/compare/v0.1.0...v0.1.1
