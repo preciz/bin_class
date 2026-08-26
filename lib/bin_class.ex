@@ -107,6 +107,8 @@ defmodule BinClass do
   Loads a saved model from a file and returns an Nx.Serving struct.
   """
   def load(path, opts \\ []) do
+    opts = validate_serving_options!(opts)
+
     path
     |> load_classifier()
     |> serving(opts)
@@ -116,6 +118,8 @@ defmodule BinClass do
   Deserializes a saved model from a binary and returns an Nx.Serving struct.
   """
   def deserialize(binary, opts \\ []) when is_binary(binary) do
+    opts = validate_serving_options!(opts)
+
     binary
     |> deserialize_classifier()
     |> serving(opts)
@@ -134,12 +138,7 @@ defmodule BinClass do
     * `:defn_options` - Options passed to the compiled definition. Defaults to `[]`.
   """
   def serving(%BinClass.Classifier{} = classifier, opts \\ []) do
-    opts =
-      Keyword.validate!(opts, [
-        :compiler,
-        :batch_size,
-        :defn_options
-      ])
+    opts = validate_serving_options!(opts)
 
     serving_opts =
       Keyword.merge(opts,
@@ -252,8 +251,9 @@ defmodule BinClass do
       in chunks. Defaults to 1 (lowest latency).
   """
   def compile_predictor(%BinClass.Classifier{} = classifier, opts \\ []) do
-    compiler = Keyword.get(opts, :compiler, EXLA)
-    batch_size = Keyword.get(opts, :batch_size, 1)
+    opts = Keyword.validate!(opts, compiler: EXLA, batch_size: 1)
+    compiler = Keyword.fetch!(opts, :compiler)
+    batch_size = Keyword.fetch!(opts, :batch_size)
 
     unless is_integer(batch_size) and batch_size > 0 do
       raise ArgumentError, ":batch_size must be a positive integer, got: #{inspect(batch_size)}"
@@ -395,6 +395,14 @@ defmodule BinClass do
       {:ok, value} -> value
       :error -> raise ArgumentError, "Serialized classifier is missing #{inspect(key)}"
     end
+  end
+
+  defp validate_serving_options!(opts) do
+    Keyword.validate!(opts, [
+      :compiler,
+      :batch_size,
+      :defn_options
+    ])
   end
 
   defp ensure_serialization_modules_loaded! do

@@ -40,7 +40,8 @@ defmodule BinClass.Tokenizer do
   end
 
   def train(data, opts \\ []) do
-    vocab_size = Keyword.get(opts, :vocab_size, @default_vocab_size)
+    opts = Keyword.validate!(opts, vocab_size: @default_vocab_size)
+    vocab_size = Keyword.fetch!(opts, :vocab_size)
 
     {:ok, model} = Model.BPE.init(%{}, [], unk_token: "[UNK]")
     {:ok, tokenizer} = Tokenizer.init(model)

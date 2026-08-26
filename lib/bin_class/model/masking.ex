@@ -69,7 +69,8 @@ defmodule BinClass.Model.Masking do
         %__MODULE__{token_mask: token_mask},
         opts
       ) do
-    keep_axes? = Keyword.get(opts, :keep_axes, false)
+    opts = Keyword.validate!(opts, keep_axes: false)
+    keep_axes? = Keyword.fetch!(opts, :keep_axes)
 
     Axon.layer(
       fn sequence, token_mask, _opts ->

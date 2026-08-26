@@ -2,6 +2,15 @@ defmodule BinClass.Model.SepSeCnn do
   @moduledoc false
 
   def build(vocab_size, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [
+        :embedding_size,
+        :branch_filters,
+        :dropout_rate,
+        :pad_token_id,
+        :seed
+      ])
+
     embedding_size = Keyword.get(opts, :embedding_size, 64)
     # Filters for the pointwise convolution (projection)
     # Increased to 48 because SepConv is cheap, so we can afford more channels than V3 (32)
@@ -16,7 +25,7 @@ defmodule BinClass.Model.SepSeCnn do
       input
       |> Axon.embedding(vocab_size, embedding_size)
       |> BinClass.Model.Masking.mask_sequence(masking)
-      |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 0))
+      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
 
     # Branches for 3, 4, 5-grams
     branches =
@@ -30,7 +39,7 @@ defmodule BinClass.Model.SepSeCnn do
 
     Axon.concatenate(branches, axis: -1)
     |> Axon.dense(64, activation: :relu)
-    |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 1))
+    |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
     |> Axon.dense(2, activation: :softmax)
   end
 

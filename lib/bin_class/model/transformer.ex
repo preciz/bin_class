@@ -4,6 +4,9 @@ defmodule BinClass.Model.Transformer do
   """
 
   def build(vocab_size, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [:embedding_size, :ff_dim, :dropout_rate, :pad_token_id, :seed])
+
     embedding_size = Keyword.get(opts, :embedding_size, 64)
     ff_dim = Keyword.get(opts, :ff_dim, 128)
     dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
@@ -42,7 +45,7 @@ defmodule BinClass.Model.Transformer do
         [embedded_raw]
       )
       |> BinClass.Model.Masking.mask_sequence(masking)
-      |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 0))
+      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
 
     # Self-attention Block
     # We project embedded to query, key, value using Dense layers
@@ -78,7 +81,7 @@ defmodule BinClass.Model.Transformer do
     x =
       Axon.add(embedded, attn_output)
       |> Axon.layer_norm()
-      |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 1))
+      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
 
     # Feed-forward network
     ffn_output =
@@ -89,7 +92,7 @@ defmodule BinClass.Model.Transformer do
     x =
       Axon.add(x, ffn_output)
       |> Axon.layer_norm()
-      |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 2))
+      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 2))
 
     # Global Mixed Pooling (Average + Max)
     pooled =
@@ -103,7 +106,7 @@ defmodule BinClass.Model.Transformer do
 
     pooled
     |> Axon.dense(64, activation: :relu)
-    |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 3))
+    |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 3))
     |> Axon.dense(2)
     |> Axon.softmax()
   end

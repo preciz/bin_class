@@ -9,6 +9,20 @@ defmodule BinClassTest do
     assert Code.ensure_loaded?(BinClass.Tokenizer)
   end
 
+  test "public inference constructors reject unknown options before doing work" do
+    classifier = %BinClass.Classifier{}
+
+    for operation <- [
+          fn -> BinClass.load("missing.bin", not_an_option: true) end,
+          fn -> BinClass.deserialize(<<>>, not_an_option: true) end,
+          fn -> BinClass.serving(classifier, not_an_option: true) end,
+          fn -> BinClass.compile_predictor(classifier, not_an_option: true) end,
+          fn -> BinClass.compile_document_predictor(classifier, not_an_option: true) end
+        ] do
+      assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, operation
+    end
+  end
+
   test "serialization rejects numeric model architectures" do
     tokenizer = BinClass.Tokenizer.train(["hello world"])
 

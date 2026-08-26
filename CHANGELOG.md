@@ -46,6 +46,9 @@ All notable changes to this project are documented in this file.
 - Training and validation partitions are now stratified whenever both target
   classes have enough examples to occur in both partitions. Threshold
   optimization fails before tokenizer or model setup when that is impossible.
+- Public functions that accept keyword options now reject unknown keys instead
+  of silently ignoring them, including compiled prediction, tokenizer training,
+  and direct model construction.
 - Threshold calibration now computes validation predictions once and reuses
   them across all threshold candidates.
 - Serving and compiled prediction now obtain active lengths directly from the

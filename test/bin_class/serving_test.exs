@@ -98,6 +98,12 @@ defmodule BinClass.ServingTest do
     assert %Nx.Serving{} = serving
   end
 
+  test "Serving.new rejects unknown options before model setup" do
+    assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, fn ->
+      Serving.new(nil, nil, not_an_option: true)
+    end
+  end
+
   test "unknown tokens count as active tokens rather than padding" do
     tokenizer = BinClass.Tokenizer.train(["known"])
     metadata = BinClass.Tokenizer.metadata(tokenizer)

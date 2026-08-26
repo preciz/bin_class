@@ -2,6 +2,15 @@ defmodule BinClass.Model.MultiScaleCnn do
   @moduledoc false
 
   def build(vocab_size, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [
+        :embedding_size,
+        :branch_filters,
+        :dropout_rate,
+        :pad_token_id,
+        :seed
+      ])
+
     embedding_size = Keyword.get(opts, :embedding_size, 64)
     # Reduced filters per branch to maintain speed (Total 4 branches * 32 = 128 features)
     branch_filters = Keyword.get(opts, :branch_filters, 32)
@@ -15,7 +24,7 @@ defmodule BinClass.Model.MultiScaleCnn do
       input
       |> Axon.embedding(vocab_size, embedding_size)
       |> BinClass.Model.Masking.mask_sequence(masking)
-      |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 0))
+      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
 
     # Branch A: 3-gram
     conv3 =
@@ -42,7 +51,7 @@ defmodule BinClass.Model.MultiScaleCnn do
 
     Axon.concatenate(features, axis: -1)
     |> Axon.dense(64, activation: :relu)
-    |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 1))
+    |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
     |> Axon.dense(2, activation: :softmax)
   end
 end

@@ -170,6 +170,10 @@ defmodule BinClass.EvaluationTest do
   end
 
   test "validates rows and options directly" do
+    assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, fn ->
+      Evaluation.evaluate([], not_an_option: true)
+    end
+
     assert_raise ArgumentError, ~r/:probability must resolve/, fn ->
       Evaluation.evaluate([%{probability: 1.1, label: 1}])
     end

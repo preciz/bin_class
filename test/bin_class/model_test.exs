@@ -178,14 +178,15 @@ defmodule BinClass.ModelTest do
 
     for architecture <- Model.architectures() do
       model =
-        Model.build(architecture, 100,
-          dropout_rate: 0.0,
-          pad_token_id: pad_token_id,
-          embedding_size: 16,
-          conv_filters: 16,
-          branch_filters: 8,
-          ff_dim: 32,
-          seed: 1234
+        Model.build(
+          architecture,
+          100,
+          architecture_options(architecture,
+            dropout_rate: 0.0,
+            pad_token_id: pad_token_id,
+            embedding_size: 16,
+            seed: 1234
+          )
         )
 
       {init_fn, predict_fn} = Axon.build(model, seed: 42)
@@ -227,14 +228,15 @@ defmodule BinClass.ModelTest do
 
     for architecture <- Model.architectures() do
       model =
-        Model.build(architecture, 100,
-          dropout_rate: 0.0,
-          pad_token_id: pad_token_id,
-          embedding_size: 16,
-          conv_filters: 16,
-          branch_filters: 8,
-          ff_dim: 32,
-          seed: 1234
+        Model.build(
+          architecture,
+          100,
+          architecture_options(architecture,
+            dropout_rate: 0.0,
+            pad_token_id: pad_token_id,
+            embedding_size: 16,
+            seed: 1234
+          )
         )
 
       {init_fn, predict_fn} = Axon.build(model, seed: 42)
@@ -265,5 +267,45 @@ defmodule BinClass.ModelTest do
     assert_raise ArgumentError, "Unknown model architecture: :unknown", fn ->
       Model.build(:unknown, 100)
     end
+  end
+
+  test "dispatcher, direct model builders, and masking reject unknown options" do
+    modules = %{
+      cnn: BinClass.Model.Cnn,
+      cnn_mixed_pooling: BinClass.Model.CnnMixedPooling,
+      multi_scale_cnn: BinClass.Model.MultiScaleCnn,
+      sep_se_cnn: BinClass.Model.SepSeCnn,
+      parallel_cnn: BinClass.Model.ParallelCnn,
+      transformer: BinClass.Model.Transformer
+    }
+
+    for {architecture, module} <- modules do
+      assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, fn ->
+        Model.build(architecture, 100, not_an_option: true)
+      end
+
+      assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, fn ->
+        apply(module, :build, [100, [not_an_option: true]])
+      end
+    end
+
+    input = Axon.input("input")
+    masking = BinClass.Model.Masking.new(input, 0)
+
+    assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, fn ->
+      BinClass.Model.Masking.masked_global_avg(input, masking, not_an_option: true)
+    end
+  end
+
+  defp architecture_options(architecture, common) do
+    architecture_specific =
+      case architecture do
+        architecture when architecture in [:cnn, :cnn_mixed_pooling] -> [conv_filters: 16]
+        architecture when architecture in [:multi_scale_cnn, :sep_se_cnn] -> [branch_filters: 8]
+        :parallel_cnn -> []
+        :transformer -> [ff_dim: 32]
+      end
+
+    Keyword.merge(common, architecture_specific)
   end
 end

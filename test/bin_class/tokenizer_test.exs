@@ -36,4 +36,10 @@ defmodule BinClass.TokenizerTest do
     assert unk_token_id == Tokenizers.Tokenizer.token_to_id(tokenizer, "[UNK]")
     assert pad_token_id != unk_token_id
   end
+
+  test "rejects unknown training options" do
+    assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, fn ->
+      Tokenizer.train(["hello world"], not_an_option: true)
+    end
+  end
 end

@@ -116,10 +116,8 @@ defmodule BinClass.Model do
   end
 
   @doc false
-  def dropout_options(opts, rate, offset) do
-    case Keyword.get(opts, :seed) do
-      nil -> [rate: rate]
-      seed when is_integer(seed) -> [rate: rate, seed: seed + offset]
-    end
-  end
+  def dropout_options(nil, rate, _offset), do: [rate: rate]
+
+  def dropout_options(seed, rate, offset) when is_integer(seed),
+    do: [rate: rate, seed: seed + offset]
 end
