@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## [Unreleased]
 
 ### Added
 
@@ -20,6 +20,11 @@ All notable changes to this project are documented in this file.
   false-positive cost.
 - Added persisted `:minimum_input_tokens` validation. Short inputs now return
   `:insufficient_input` while retaining their raw class probabilities.
+- Added opt-in soft training targets, accepting positive-class probabilities
+  from `0.0` through `1.0` and converting them to `[1 - p, p]` distributions.
+- Added configurable target boundaries for balancing, validation metrics, and
+  decision-threshold calibration.
+- Added serialized target-mode metadata.
 
 ### Changed
 
@@ -66,6 +71,10 @@ All notable changes to this project are documented in this file.
   with the previous schema must be retrained.
 - Added `BinClass.Tokenizer.metadata/1` and changed the vectorizer's
   three-argument `build` function to `BinClass.Vectorizer.build/4`.
+- Renamed the classifier field, training and serving option, and serialized key
+  from `model_version` to `architecture`.
+- Serialized classifiers now require an explicit named `architecture`. Existing
+  binaries using the old schema must be retrained.
 
 ### Removed
 
@@ -94,6 +103,11 @@ All notable changes to this project are documented in this file.
 - Replaced the low-level public serving constructor with `BinClass.serving/2`,
   which accepts a complete classifier and only runtime serving options. The
   implementation module is now internal.
+- Removed numeric model architecture identifiers. Training, serving, serialization,
+  and deserialization now require named architectures such as `:cnn`.
+- Removed all fallback handling for the previous model-version schema.
+- Removed serialization and inference fallbacks for missing classifier dropout
+  and target metadata. Incomplete classifiers now raise a clear error.
 
 ### Fixed
 
@@ -108,30 +122,6 @@ All notable changes to this project are documented in this file.
   Valid-convolution architectures propagate kernel-specific masks so outputs
   whose receptive fields include padding cannot affect predictions.
 - Prediction and document-chunk results now expose `:active_token_count`.
-
-## [0.3.0] - 2026-08-24
-
-### Added
-
-- Added opt-in soft training targets, accepting positive-class probabilities
-  from `0.0` through `1.0` and converting them to `[1 - p, p]` distributions.
-- Added configurable target boundaries for balancing, validation metrics, and
-  decision-threshold calibration.
-- Added serialized target-mode metadata.
-
-### Changed
-
-- Renamed the classifier field, training and serving option, and serialized key
-  from `model_version` to `architecture`.
-- Serialized classifiers now require an explicit named `architecture`. Existing
-  binaries using the old schema must be retrained.
-
-### Removed
-
-- Removed numeric model architecture identifiers. Training, serving, serialization,
-  and deserialization now require named architectures such as `:cnn` or
-  `:conservative_cnn`.
-- Removed all fallback handling for the previous model-version schema.
 
 ## [0.2.1] - 2026-08-20
 
@@ -228,7 +218,7 @@ All notable changes to this project are documented in this file.
 
 - Added and refined README, examples documentation, and module documentation for the initial Hex release.
 
-[0.3.0]: https://github.com/preciz/bin_class/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/preciz/bin_class/compare/v0.2.1...HEAD
 [0.2.1]: https://github.com/preciz/bin_class/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/preciz/bin_class/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/preciz/bin_class/compare/v0.1.2...v0.1.3

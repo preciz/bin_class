@@ -87,6 +87,7 @@ defmodule BinClassTest do
       unk_token_id: metadata.unk_token_id,
       labels: ["negative", "positive"],
       architecture: :cnn,
+      dropout_rate: 0.2,
       decision_policy: %{strategy: :argmax},
       minimum_input_tokens: 0,
       target_mode: :hard,
@@ -149,6 +150,7 @@ defmodule BinClassTest do
       unk_token_id: metadata.unk_token_id,
       labels: ["0", "1"],
       architecture: :cnn,
+      dropout_rate: 0.2,
       decision_policy: %{strategy: :argmax},
       minimum_input_tokens: 0,
       target_mode: :soft,
@@ -170,6 +172,25 @@ defmodule BinClassTest do
     assert loaded.vocab_size == metadata.vocab_size
     assert loaded.pad_token_id == metadata.pad_token_id
     assert loaded.unk_token_id == metadata.unk_token_id
+
+    for {field, message} <- [
+          {:dropout_rate, ~r/Classifier :dropout_rate/},
+          {:target_mode, ~r/Classifier :target_mode/},
+          {:target_threshold, ~r/Classifier :target_threshold/}
+        ] do
+      assert_raise ArgumentError, message, fn ->
+        classifier
+        |> Map.put(field, nil)
+        |> BinClass.serialize()
+      end
+
+      assert_raise ArgumentError, message, fn ->
+        serialized_data
+        |> Map.put(field, nil)
+        |> :erlang.term_to_binary()
+        |> BinClass.deserialize_classifier()
+      end
+    end
   end
 
   test "deserialization rejects missing or incompatible model revisions" do
@@ -185,8 +206,11 @@ defmodule BinClassTest do
       unk_token_id: metadata.unk_token_id,
       labels: ["0", "1"],
       architecture: :cnn,
+      dropout_rate: 0.2,
       decision_policy: %{strategy: :argmax},
-      minimum_input_tokens: 0
+      minimum_input_tokens: 0,
+      target_mode: :hard,
+      target_threshold: 0.5
     }
 
     serialized = classifier |> BinClass.serialize() |> :erlang.binary_to_term()
@@ -219,8 +243,11 @@ defmodule BinClassTest do
       unk_token_id: metadata.unk_token_id,
       labels: ["0", "1"],
       architecture: :cnn,
+      dropout_rate: 0.2,
       decision_policy: %{strategy: :argmax},
-      minimum_input_tokens: 0
+      minimum_input_tokens: 0,
+      target_mode: :hard,
+      target_threshold: 0.5
     }
 
     assert_raise ArgumentError, ~r/stored tokenizer metadata vocab_size.*tokenizer JSON/, fn ->
@@ -300,6 +327,16 @@ defmodule BinClassTest do
 
     assert_raise ArgumentError, ~r/minimum_input_tokens/, fn ->
       BinClass.serving(classifier, minimum_input_tokens: 1)
+    end
+
+    classifier_without_dropout = %{classifier | dropout_rate: nil}
+
+    assert_raise ArgumentError, ~r/Classifier :dropout_rate/, fn ->
+      BinClass.serving(classifier_without_dropout)
+    end
+
+    assert_raise ArgumentError, ~r/Classifier :dropout_rate/, fn ->
+      BinClass.compile_predictor(classifier_without_dropout)
     end
 
     result = predictor.("I love this!")

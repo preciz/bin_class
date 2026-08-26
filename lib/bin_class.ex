@@ -65,6 +65,9 @@ defmodule BinClass do
     BinClass.Model.validate_vector_length!(classifier.architecture, classifier.vector_length)
     BinClass.Labels.validate!(classifier.labels)
     BinClass.DecisionPolicy.validate!(classifier.decision_policy)
+    dropout_rate = validate_dropout_rate!(classifier.dropout_rate)
+    target_mode = validate_target_mode!(classifier.target_mode)
+    target_threshold = validate_target_threshold!(classifier.target_threshold)
 
     BinClass.DecisionPolicy.validate_minimum_input_tokens!(
       classifier.minimum_input_tokens,
@@ -93,11 +96,11 @@ defmodule BinClass do
       architecture: classifier.architecture,
       model_revision: classifier.model_revision,
       learning_rate: classifier.learning_rate,
-      dropout_rate: classifier.dropout_rate,
+      dropout_rate: dropout_rate,
       decision_policy: classifier.decision_policy,
       minimum_input_tokens: classifier.minimum_input_tokens,
-      target_mode: classifier.target_mode || :hard,
-      target_threshold: classifier.target_threshold || 0.5
+      target_mode: target_mode,
+      target_threshold: target_threshold
     }
 
     :erlang.term_to_binary(data)
@@ -139,13 +142,14 @@ defmodule BinClass do
   """
   def serving(%BinClass.Classifier{} = classifier, opts \\ []) do
     opts = validate_serving_options!(opts)
+    dropout_rate = validate_dropout_rate!(classifier.dropout_rate)
 
     serving_opts =
       Keyword.merge(opts,
         vector_length: classifier.vector_length,
         labels: classifier.labels,
         architecture: classifier.architecture,
-        dropout_rate: classifier.dropout_rate || 0.2,
+        dropout_rate: dropout_rate,
         decision_policy: classifier.decision_policy,
         minimum_input_tokens: classifier.minimum_input_tokens
       )
@@ -200,6 +204,21 @@ defmodule BinClass do
     vector_length = fetch_serialized_field!(data, :vector_length)
     BinClass.Model.validate_vector_length!(architecture, vector_length)
 
+    dropout_rate =
+      data
+      |> fetch_serialized_field!(:dropout_rate)
+      |> validate_dropout_rate!()
+
+    target_mode =
+      data
+      |> fetch_serialized_field!(:target_mode)
+      |> validate_target_mode!()
+
+    target_threshold =
+      data
+      |> fetch_serialized_field!(:target_threshold)
+      |> validate_target_threshold!()
+
     %BinClass.Classifier{
       tokenizer: tokenizer,
       model_params: fetch_serialized_field!(data, :model_params),
@@ -216,7 +235,7 @@ defmodule BinClass do
       architecture: architecture,
       model_revision: model_revision,
       learning_rate: fetch_serialized_field!(data, :learning_rate),
-      dropout_rate: fetch_serialized_field!(data, :dropout_rate),
+      dropout_rate: dropout_rate,
       decision_policy:
         data
         |> fetch_serialized_field!(:decision_policy)
@@ -225,8 +244,8 @@ defmodule BinClass do
         data
         |> fetch_serialized_field!(:minimum_input_tokens)
         |> BinClass.DecisionPolicy.validate_minimum_input_tokens!(vector_length),
-      target_mode: fetch_serialized_field!(data, :target_mode),
-      target_threshold: fetch_serialized_field!(data, :target_threshold)
+      target_mode: target_mode,
+      target_threshold: target_threshold
     }
   end
 
@@ -281,7 +300,7 @@ defmodule BinClass do
       vector_length
     )
 
-    dropout_rate = classifier.dropout_rate || 0.2
+    dropout_rate = validate_dropout_rate!(classifier.dropout_rate)
 
     model =
       BinClass.Model.build(architecture, vocab_size,
@@ -395,6 +414,33 @@ defmodule BinClass do
       {:ok, value} -> value
       :error -> raise ArgumentError, "Serialized classifier is missing #{inspect(key)}"
     end
+  end
+
+  defp validate_dropout_rate!(dropout_rate)
+       when is_number(dropout_rate) and dropout_rate >= 0 and dropout_rate < 1,
+       do: dropout_rate
+
+  defp validate_dropout_rate!(dropout_rate) do
+    raise ArgumentError,
+          "Classifier :dropout_rate must be a number greater than or equal to 0 and below 1, " <>
+            "got: #{inspect(dropout_rate)}"
+  end
+
+  defp validate_target_mode!(target_mode) when target_mode in [:hard, :soft], do: target_mode
+
+  defp validate_target_mode!(target_mode) do
+    raise ArgumentError,
+          "Classifier :target_mode must be :hard or :soft, got: #{inspect(target_mode)}"
+  end
+
+  defp validate_target_threshold!(target_threshold)
+       when is_number(target_threshold) and target_threshold >= 0 and target_threshold <= 1,
+       do: target_threshold
+
+  defp validate_target_threshold!(target_threshold) do
+    raise ArgumentError,
+          "Classifier :target_threshold must be a number between 0 and 1, " <>
+            "got: #{inspect(target_threshold)}"
   end
 
   defp validate_serving_options!(opts) do
