@@ -1,7 +1,7 @@
 defmodule BinClass.MixProject do
   use Mix.Project
 
-  @version "0.2.1"
+  @version "0.3.0"
   @github "https://github.com/preciz/bin_class"
 
   def project do
@@ -34,10 +34,10 @@ defmodule BinClass.MixProject do
   defp deps do
     [
       {:axon, "~> 0.8"},
+      {:chunx, "~> 0.2.0"},
       {:exla, "~> 0.13.1"},
       {:nx, "~> 0.13.1"},
       {:tokenizers, "~> 0.5"},
-      {:explorer, "~> 0.11"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false}
     ]
   end

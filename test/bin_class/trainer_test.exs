@@ -2,6 +2,32 @@ defmodule BinClass.TrainerTest do
   use ExUnit.Case
   alias BinClass.Trainer
 
+  test "splits before balancing and never copies training examples into validation" do
+    data = [
+      %{id: :positive, text: "positive", label: 1},
+      %{id: :negative_1, text: "negative", label: 0},
+      %{id: :negative_2, text: "negative", label: 0},
+      %{id: :negative_3, text: "negative", label: 0},
+      %{id: :negative_4, text: "negative", label: 0},
+      %{id: :negative_5, text: "negative", label: 0},
+      %{id: :negative_6, text: "negative", label: 0},
+      %{id: :negative_7, text: "negative", label: 0},
+      %{id: :validation_1, text: "validation", label: 0},
+      %{id: :validation_2, text: "validation", label: 0}
+    ]
+
+    {training, validation} =
+      Trainer.split_and_balance_data(data, 1, 0.2, true, :hard, 0.5, nil)
+
+    assert length(training) == 14
+    assert Enum.count(training, &(&1.id == :positive)) == 7
+    assert Enum.map(validation, & &1.id) == [:validation_1, :validation_2]
+
+    training_ids = MapSet.new(training, & &1.id)
+    validation_ids = MapSet.new(validation, & &1.id)
+    assert MapSet.disjoint?(training_ids, validation_ids)
+  end
+
   test "balance_data/1 covers all branches" do
     # Branch c1 > c0
     data_c1_gt_c0 = [
@@ -63,20 +89,24 @@ defmodule BinClass.TrainerTest do
     result = Trainer.train(data, epochs: 1, batch_size: 1)
     assert %BinClass.Classifier{} = result
     assert result.vector_length == 512
-    assert result.model_version == :conservative_cnn
-    assert %{positive_threshold: threshold, min_positive_tokens: 64} = result.decision_policy
-    assert threshold in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
+    assert result.architecture == :cnn
+    assert result.decision_policy == %{strategy: :argmax}
+    assert result.minimum_input_tokens == 0
+    assert result.labels == ["0", "1"]
   end
 
-  test "older model versions do not calibrate threshold by default" do
+  test "decision behavior does not depend on model architecture" do
     data = [
       %{text: "a", label: 1},
       %{text: "b", label: 0}
     ]
 
-    result = Trainer.train(data, epochs: 1, batch_size: 1, model_version: 1, vector_length: 8)
+    result =
+      Trainer.train(data, epochs: 1, batch_size: 1, architecture: :cnn, vector_length: 8)
+
     assert %BinClass.Classifier{} = result
-    assert result.decision_policy == nil
+    assert result.decision_policy == %{strategy: :argmax}
+    assert result.minimum_input_tokens == 0
   end
 
   test "trainer with custom options" do
@@ -98,44 +128,50 @@ defmodule BinClass.TrainerTest do
         epochs: 1,
         batch_size: 2,
         learning_rate: 0.01,
+        dropout_rate: 0.35,
         decay: 0.1,
         validation_split: 0.2,
         patience: 2,
+        decision_policy: {:positive_threshold, 0.7},
+        minimum_input_tokens: 1,
         vector_length: 8
       )
 
     assert %BinClass.Classifier{} = result
+    assert result.learning_rate == 0.01
+    assert result.dropout_rate == 0.35
+    assert result.decision_policy == %{strategy: :positive_threshold, positive_threshold: 0.7}
+    assert result.minimum_input_tokens == 1
   end
 
-  test "hyperparameter auto-tuning" do
-    data = [
-      %{text: "pos", label: 1},
-      %{text: "pos", label: 1},
-      %{text: "pos", label: 1},
-      %{text: "pos", label: 1},
-      %{text: "pos", label: 1},
-      %{text: "pos", label: 1},
-      %{text: "pos", label: 1},
-      %{text: "pos", label: 1},
-      %{text: "pos", label: 1},
-      %{text: "pos", label: 1},
-      %{text: "neg", label: 0},
-      %{text: "neg", label: 0},
-      %{text: "neg", label: 0},
-      %{text: "neg", label: 0},
-      %{text: "neg", label: 0},
-      %{text: "neg", label: 0},
-      %{text: "neg", label: 0},
-      %{text: "neg", label: 0},
-      %{text: "neg", label: 0},
-      %{text: "neg", label: 0}
-    ]
+  test "explicitly optimizes and persists a positive threshold" do
+    data =
+      for id <- 1..20 do
+        %{id: id, text: "row #{id} evidence", label: rem(id, 2)}
+      end
 
-    # We use a very small subset for tuning in the test to keep it fast
-    result = Trainer.train(data, epochs: 1, batch_size: 2, tune: true, vector_length: 8)
-    assert %BinClass.Classifier{} = result
-    assert result.learning_rate in [1.0e-2, 1.0e-3, 5.0e-4, 1.0e-4]
-    assert result.dropout_rate in [0.1, 0.2, 0.3, 0.4, 0.5]
+    result =
+      Trainer.train(data,
+        epochs: 1,
+        batch_size: 2,
+        vector_length: 8,
+        architecture: :cnn,
+        seed: 1234,
+        decision_policy:
+          {:optimize_threshold, [objective: :balanced_accuracy, false_positive_cost: 0.5]}
+      )
+
+    assert %{
+             strategy: :positive_threshold,
+             positive_threshold: threshold,
+             optimization: %{
+               objective: :balanced_accuracy,
+               false_positive_cost: 0.5,
+               validation_score: _
+             }
+           } = result.decision_policy
+
+    assert threshold >= 0.0 and threshold <= 1.0
   end
 
   test "explicit vector_length" do
@@ -145,27 +181,121 @@ defmodule BinClass.TrainerTest do
     assert result.vector_length == 123
   end
 
-  test "custom tokenizer data" do
-    data = [%{text: "a", label: 1}, %{text: "b", label: 0}]
-    tokenizer_data = ["a", "b", "c"]
-
-    result =
-      Trainer.train(data,
-        tokenizer_data: tokenizer_data,
-        epochs: 1,
-        batch_size: 1,
-        vector_length: 8
-      )
-
-    assert %BinClass.Classifier{} = result
-    assert result.accuracy >= 0
-  end
-
   test "custom compiler" do
     data = [%{text: "a", label: 1}, %{text: "b", label: 0}]
     # We use EXLA explicitly
     result = Trainer.train(data, epochs: 1, batch_size: 1, compiler: EXLA, vector_length: 8)
     assert %BinClass.Classifier{} = result
     assert result.accuracy >= 0
+  end
+
+  test "rejects invalid hard and soft target configuration before training" do
+    assert_raise ArgumentError, ~r/invalid hard target 0.2/, fn ->
+      Trainer.train([%{text: "invalid", label: 0.2}], target_mode: :hard)
+    end
+
+    assert_raise ArgumentError, ~r/invalid soft target 1.1/, fn ->
+      Trainer.train([%{text: "invalid", label: 1.1}], target_mode: :soft)
+    end
+
+    assert_raise ArgumentError, ~r/:target_mode must be :hard or :soft/, fn ->
+      Trainer.train([], target_mode: :ordinal)
+    end
+
+    assert_raise ArgumentError, ~r/:target_threshold must be a number between 0 and 1/, fn ->
+      Trainer.train([], target_mode: :soft, target_threshold: 1.1)
+    end
+
+    assert_raise ArgumentError, ~r/:seed must be an integer or nil/, fn ->
+      Trainer.train([], seed: :random)
+    end
+
+    assert_raise ArgumentError, ~r/:calibrate_threshold/, fn ->
+      Trainer.train([], calibrate_threshold: true)
+    end
+  end
+
+  test "rejects invalid training options before model setup" do
+    data = [%{text: "negative", label: 0}, %{text: "positive", label: 1}]
+
+    assert_raise ArgumentError, ":epochs must be a positive integer, got: 0", fn ->
+      Trainer.train(data, epochs: 0, batch_size: 1)
+    end
+
+    assert_raise ArgumentError, ":batch_size must be a positive integer, got: 0", fn ->
+      Trainer.train(data, batch_size: 0)
+    end
+
+    for validation_split <- [0, 1, -0.1, 1.1, :invalid] do
+      assert_raise ArgumentError, ~r/:validation_split must be a number/, fn ->
+        Trainer.train(data, batch_size: 1, validation_split: validation_split)
+      end
+    end
+
+    assert_raise ArgumentError, ":vector_length must be a positive integer, got: 0", fn ->
+      Trainer.train(data, batch_size: 1, vector_length: 0)
+    end
+
+    assert_raise ArgumentError, ~r/must be at least 3 for architecture :cnn/, fn ->
+      Trainer.train(data, batch_size: 1, architecture: :cnn, vector_length: 2)
+    end
+
+    assert_raise ArgumentError, ~r/must be at least 5 for architecture :multi_scale_cnn/, fn ->
+      Trainer.train(data, batch_size: 1, architecture: :multi_scale_cnn, vector_length: 4)
+    end
+
+    for labels <- [[:negative, :positive], ["same", "same"], ["only one"], %{0 => "negative"}] do
+      assert_raise ArgumentError, ~r/:labels must be.*distinct binaries/, fn ->
+        Trainer.train(data, batch_size: 1, labels: labels)
+      end
+    end
+
+    assert_raise ArgumentError, ~r/:decision_policy must be/, fn ->
+      Trainer.train(data, batch_size: 1, decision_policy: :automatic)
+    end
+
+    assert_raise ArgumentError, ~r/positive threshold must be a number between 0 and 1/, fn ->
+      Trainer.train(data, batch_size: 1, decision_policy: {:positive_threshold, 1.1})
+    end
+
+    assert_raise ArgumentError, ~r/:minimum_input_tokens must be a non-negative integer/, fn ->
+      Trainer.train(data, batch_size: 1, minimum_input_tokens: -1)
+    end
+
+    assert_raise ArgumentError, ~r/:minimum_input_tokens cannot exceed :vector_length/, fn ->
+      Trainer.train(data, batch_size: 1, vector_length: 8, minimum_input_tokens: 9)
+    end
+  end
+
+  test "rejects empty data and configurations with empty batch partitions" do
+    assert_raise ArgumentError, "training data must not be empty", fn ->
+      Trainer.train([], batch_size: 1)
+    end
+
+    data =
+      for id <- 1..10 do
+        %{text: "row #{id}", label: rem(id, 2)}
+      end
+
+    assert_raise ArgumentError,
+                 ~r/must produce at least one full training batch and one full validation batch.*10 examples.*batch_size 6.*0 training batches.*1 validation batches/s,
+                 fn ->
+                   Trainer.train(data, batch_size: 6, validation_split: 0.2)
+                 end
+  end
+
+  test "seed makes partitioning and balancing deterministic" do
+    data =
+      for id <- 1..20 do
+        %{id: id, text: "row #{id}", label: rem(id, 2)}
+      end
+
+    args = [data, 2, 0.2, true, :hard, 0.5, 1234]
+
+    assert apply(Trainer, :split_and_balance_data, args) ==
+             apply(Trainer, :split_and_balance_data, args)
+
+    refute apply(Trainer, :split_and_balance_data, args) ==
+             Trainer.split_and_balance_data(data, 2, 0.2, true, :hard, 0.5, 5678)
   end
 end

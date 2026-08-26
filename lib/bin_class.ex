@@ -15,12 +15,11 @@ defmodule BinClass do
       # Use a map for explicit label mapping
       classifier = BinClass.Trainer.train(data,
         epochs: 5,
-        labels: %{0 => :negative, 1 => :positive}
+        labels: %{0 => "negative", 1 => "positive"}
       )
 
-      # The default model is v7 (:conservative_cnn). It uses a 512-token
-      # vector length, false-positive-aware checkpoint selection, and
-      # persisted threshold calibration.
+      # Prediction uses argmax unless an explicit decision policy was selected
+      # during training.
 
       # Save the model
       BinClass.save(classifier, "model.bin")
@@ -31,7 +30,7 @@ defmodule BinClass do
       serving = BinClass.load("model.bin", compiler: EXLA)
 
       result = Nx.Serving.run(serving, "Some text to classify")
-      # result is %{label: :positive, confidence: 0.99, ...}
+      # result is %{label: "positive", confidence: 0.99, ...}
 
   ### Ultra-Low Latency Inference
 
@@ -54,12 +53,28 @@ defmodule BinClass do
   @doc """
   Serializes the classifier to a binary.
 
-  The serialized data includes tokenizer state, model parameters, labels,
-  vector length, model version, training metadata, and any calibrated
-  decision policy. Classifiers saved before decision policies existed remain
-  readable via `deserialize_classifier/1`.
+  The serialized data includes tokenizer state, its exact vocabulary and
+  special-token IDs, model parameters, labels, vector length, named model
+  architecture, training metadata (including target mode and threshold), and
+  the explicit decision policy and minimum-input validation setting.
   """
   def serialize(%BinClass.Classifier{} = classifier) do
+    BinClass.Model.validate_name!(classifier.architecture)
+    BinClass.Model.validate_vector_length!(classifier.architecture, classifier.vector_length)
+    BinClass.Labels.validate!(classifier.labels)
+    BinClass.DecisionPolicy.validate!(classifier.decision_policy)
+
+    BinClass.DecisionPolicy.validate_minimum_input_tokens!(
+      classifier.minimum_input_tokens,
+      classifier.vector_length
+    )
+
+    BinClass.Tokenizer.validate_metadata!(classifier.tokenizer, %{
+      vocab_size: classifier.vocab_size,
+      pad_token_id: classifier.pad_token_id,
+      unk_token_id: classifier.unk_token_id
+    })
+
     # Ensure model params are on Binary backend for safe serialization
     model_params_binary = Nx.backend_copy(classifier.model_params, Nx.BinaryBackend)
 
@@ -68,13 +83,18 @@ defmodule BinClass do
       model_params: model_params_binary,
       vector_length: classifier.vector_length,
       vocab_size: classifier.vocab_size,
+      pad_token_id: classifier.pad_token_id,
+      unk_token_id: classifier.unk_token_id,
       labels: classifier.labels,
       accuracy: classifier.accuracy,
       epoch: classifier.epoch,
-      model_version: classifier.model_version,
+      architecture: classifier.architecture,
       learning_rate: classifier.learning_rate,
       dropout_rate: classifier.dropout_rate,
-      decision_policy: classifier.decision_policy
+      decision_policy: classifier.decision_policy,
+      minimum_input_tokens: classifier.minimum_input_tokens,
+      target_mode: classifier.target_mode || :hard,
+      target_threshold: classifier.target_threshold || 0.5
     }
 
     :erlang.term_to_binary(data)
@@ -84,35 +104,48 @@ defmodule BinClass do
   Loads a saved model from a file and returns an Nx.Serving struct.
   """
   def load(path, opts \\ []) do
-    classifier = load_classifier(path)
-
-    serving_opts =
-      Keyword.merge(opts,
-        vector_length: classifier.vector_length,
-        vocab_size: classifier.vocab_size,
-        labels: classifier.labels,
-        model_version: classifier.model_version,
-        dropout_rate: classifier.dropout_rate || 0.2,
-        decision_policy: classifier.decision_policy
-      )
-
-    BinClass.Serving.new(classifier.model_params, classifier.tokenizer, serving_opts)
+    path
+    |> load_classifier()
+    |> serving(opts)
   end
 
   @doc """
   Deserializes a saved model from a binary and returns an Nx.Serving struct.
   """
   def deserialize(binary, opts \\ []) when is_binary(binary) do
-    classifier = deserialize_classifier(binary)
+    binary
+    |> deserialize_classifier()
+    |> serving(opts)
+  end
+
+  @doc """
+  Builds an `Nx.Serving` from a classifier.
+
+  Model architecture, tokenizer metadata, labels, vector length, decision
+  policy, and minimum-input validation always come from the classifier.
+
+  ## Options
+
+    * `:compiler` - The Nx compiler to use. Defaults to `EXLA`.
+    * `:batch_size` - The serving batch size. Defaults to `16`.
+    * `:defn_options` - Options passed to the compiled definition. Defaults to `[]`.
+  """
+  def serving(%BinClass.Classifier{} = classifier, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [
+        :compiler,
+        :batch_size,
+        :defn_options
+      ])
 
     serving_opts =
       Keyword.merge(opts,
         vector_length: classifier.vector_length,
-        vocab_size: classifier.vocab_size,
         labels: classifier.labels,
-        model_version: classifier.model_version,
+        architecture: classifier.architecture,
         dropout_rate: classifier.dropout_rate || 0.2,
-        decision_policy: classifier.decision_policy
+        decision_policy: classifier.decision_policy,
+        minimum_input_tokens: classifier.minimum_input_tokens
       )
 
     BinClass.Serving.new(classifier.model_params, classifier.tokenizer, serving_opts)
@@ -129,26 +162,61 @@ defmodule BinClass do
   @doc """
   Deserializes a saved model from a binary and returns a BinClass.Classifier struct.
 
-  Older binaries that do not contain `:decision_policy` load with
-  `decision_policy: nil` and use version defaults at inference time.
+  Serialized classifiers must contain the complete current schema, including
+  an explicit decision policy and minimum-input validation setting. The stored
+  vocabulary size, padding ID, and unknown-token ID must match the tokenizer JSON.
   """
   def deserialize_classifier(binary) when is_binary(binary) do
-    data = :erlang.binary_to_term(binary)
+    ensure_serialization_modules_loaded!()
+    data = :erlang.binary_to_term(binary, [:safe])
 
-    {:ok, tokenizer} = Tokenizers.Tokenizer.from_buffer(data.tokenizer_json)
+    architecture =
+      data
+      |> fetch_serialized_field!(:architecture)
+      |> BinClass.Model.validate_name!()
+
+    {:ok, tokenizer} =
+      data
+      |> fetch_serialized_field!(:tokenizer_json)
+      |> Tokenizers.Tokenizer.from_buffer()
+
+    tokenizer_metadata = %{
+      vocab_size: fetch_serialized_field!(data, :vocab_size),
+      pad_token_id: fetch_serialized_field!(data, :pad_token_id),
+      unk_token_id: fetch_serialized_field!(data, :unk_token_id)
+    }
+
+    BinClass.Tokenizer.validate_metadata!(tokenizer, tokenizer_metadata)
+
+    vector_length = fetch_serialized_field!(data, :vector_length)
+    BinClass.Model.validate_vector_length!(architecture, vector_length)
 
     %BinClass.Classifier{
       tokenizer: tokenizer,
-      model_params: data.model_params,
-      vector_length: data.vector_length,
-      vocab_size: data.vocab_size,
-      labels: data.labels,
-      accuracy: Map.get(data, :accuracy),
-      epoch: Map.get(data, :epoch),
-      model_version: Map.get(data, :model_version, 1),
-      learning_rate: Map.get(data, :learning_rate),
-      dropout_rate: Map.get(data, :dropout_rate, 0.2),
-      decision_policy: Map.get(data, :decision_policy)
+      model_params: fetch_serialized_field!(data, :model_params),
+      vector_length: vector_length,
+      vocab_size: tokenizer_metadata.vocab_size,
+      pad_token_id: tokenizer_metadata.pad_token_id,
+      unk_token_id: tokenizer_metadata.unk_token_id,
+      labels:
+        data
+        |> fetch_serialized_field!(:labels)
+        |> BinClass.Labels.validate!(),
+      accuracy: fetch_serialized_field!(data, :accuracy),
+      epoch: fetch_serialized_field!(data, :epoch),
+      architecture: architecture,
+      learning_rate: fetch_serialized_field!(data, :learning_rate),
+      dropout_rate: fetch_serialized_field!(data, :dropout_rate),
+      decision_policy:
+        data
+        |> fetch_serialized_field!(:decision_policy)
+        |> BinClass.DecisionPolicy.validate!(),
+      minimum_input_tokens:
+        data
+        |> fetch_serialized_field!(:minimum_input_tokens)
+        |> BinClass.DecisionPolicy.validate_minimum_input_tokens!(vector_length),
+      target_mode: fetch_serialized_field!(data, :target_mode),
+      target_threshold: fetch_serialized_field!(data, :target_threshold)
     }
   end
 
@@ -160,89 +228,171 @@ defmodule BinClass do
   single-user scripts, or very low-concurrency high-speed inference).
 
   Returns an anonymous function that takes a text (string) or list of texts
-  and returns the classification results.
+  and returns the classification results. Inputs below the classifier's
+  `minimum_input_tokens` return `label: :insufficient_input` and
+  `confidence: nil`, while retaining raw class probabilities.
 
   ## Options
 
     * `:compiler` - The compiler to use. Defaults to `EXLA`.
-    * `:batch_size` - The batch size to compile for. Defaults to 1 (lowest latency).
+    * `:batch_size` - The batch size to compile for. Inputs larger than this are processed
+      in chunks. Defaults to 1 (lowest latency).
   """
   def compile_predictor(%BinClass.Classifier{} = classifier, opts \\ []) do
     compiler = Keyword.get(opts, :compiler, EXLA)
     batch_size = Keyword.get(opts, :batch_size, 1)
 
+    unless is_integer(batch_size) and batch_size > 0 do
+      raise ArgumentError, ":batch_size must be a positive integer, got: #{inspect(batch_size)}"
+    end
+
+    %{
+      architecture: architecture,
+      vocab_size: vocab_size,
+      pad_token_id: pad_token_id,
+      tokenizer: tokenizer,
+      vector_length: vector_length,
+      model_params: model_params,
+      labels: labels,
+      decision_policy: decision_policy,
+      minimum_input_tokens: minimum_input_tokens
+    } = classifier
+
+    BinClass.DecisionPolicy.validate!(decision_policy)
+    BinClass.Labels.validate!(labels)
+    BinClass.Model.validate_vector_length!(architecture, vector_length)
+
+    BinClass.DecisionPolicy.validate_minimum_input_tokens!(
+      minimum_input_tokens,
+      vector_length
+    )
+
+    dropout_rate = classifier.dropout_rate || 0.2
+
     model =
-      BinClass.Model.build(classifier.model_version, classifier.vocab_size,
-        dropout_rate: classifier.dropout_rate || 0.2
+      BinClass.Model.build(architecture, vocab_size,
+        dropout_rate: dropout_rate,
+        pad_token_id: pad_token_id
       )
 
     {_, predict_fn} = Axon.build(model, compiler: compiler)
 
-    policy =
-      classifier.decision_policy || BinClass.Serving.decision_policy(classifier.model_version)
-
-    use_decision_policy? = BinClass.Serving.decision_policy?(classifier.model_version)
-
     # Compile the prediction function specifically for the given batch size
-    template = Nx.broadcast(0, {batch_size, classifier.vector_length}) |> Nx.as_type(:u16)
+    template = Nx.broadcast(pad_token_id, {batch_size, vector_length}) |> Nx.as_type(:u16)
 
     # Warmup / JIT compilation
-    _ = predict_fn.(classifier.model_params, template)
+    _ = predict_fn.(model_params, template)
+
+    padding_vector =
+      BinClass.Vectorizer.build(tokenizer, "", vector_length, pad_token_id)
+
+    predict_batch = fn texts ->
+      {vectors, active_lengths} =
+        Enum.map(texts, fn text ->
+          BinClass.Vectorizer.build_with_length(
+            tokenizer,
+            text,
+            vector_length,
+            pad_token_id
+          )
+        end)
+        |> Enum.unzip()
+
+      batch_tensor =
+        vectors
+        |> Kernel.++(List.duplicate(padding_vector, batch_size - length(vectors)))
+        |> Nx.tensor(type: :u16)
+
+      predict_fn.(model_params, batch_tensor)
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+      |> Nx.to_list()
+      |> Enum.take(length(texts))
+      |> Enum.zip(active_lengths)
+      |> Enum.map(fn {probs, active_length} ->
+        BinClass.Serving.decode_prediction(
+          probs,
+          labels,
+          decision_policy,
+          active_length,
+          minimum_input_tokens
+        )
+      end)
+    end
 
     fn input ->
       {texts, multi?} = BinClass.Serving.validate_input(input)
 
-      # Pad or truncate to batch_size
-      batch_texts =
-        if length(texts) < batch_size do
-          # Pad with empty strings if smaller than compiled batch size
-          texts ++ List.duplicate("", batch_size - length(texts))
-        else
-          # Take only up to compiled batch size
-          Enum.take(texts, batch_size)
-        end
-
-      vectors =
-        batch_texts
-        |> Enum.map(fn text ->
-          BinClass.Vectorizer.build(classifier.tokenizer, text, classifier.vector_length)
-        end)
-
-      active_lengths =
-        vectors
-        |> Enum.map(fn vector -> Enum.count(vector, &(&1 != 0)) end)
-
-      batch_tensor =
-        vectors
-        |> Enum.map(&Nx.tensor(&1, type: :u16))
-        |> Nx.Batch.stack()
-
-      # Run inference directly
-      batch_output =
-        predict_fn.(classifier.model_params, batch_tensor)
-        |> Nx.backend_transfer(Nx.BinaryBackend)
-
-      # Decode only the requested number of items
       results =
-        batch_output
-        |> Nx.to_list()
-        |> Enum.take(length(texts))
-        |> Enum.zip(active_lengths)
-        |> Enum.map(fn {probs, active_length} ->
-          if use_decision_policy? do
-            BinClass.Serving.decode_prediction(
-              probs,
-              classifier.labels,
-              policy.positive_threshold,
-              active_length,
-              policy.min_positive_tokens
-            )
-          else
-            BinClass.Serving.decode_prediction(probs, classifier.labels)
-          end
-        end)
+        texts
+        |> Stream.chunk_every(batch_size)
+        |> Stream.flat_map(predict_batch)
+        |> Enum.to_list()
 
       if multi?, do: results, else: List.first(results)
     end
+  end
+
+  @doc """
+  Compiles a predictor for one complete document.
+
+  The returned function accepts exactly one string. It splits the entire input
+  into overlapping token windows, predicts every chunk in batches, and returns
+  each chunk's text, zero-based index, token count, original start/end byte
+  offsets, and raw classification result.
+
+  No text is normalized or truncated. `:start_byte` is inclusive and
+  `:end_byte` is exclusive, and both refer to the exact string passed to the
+  predictor. Empty or whitespace-only documents return no chunks and
+  `status: :insufficient_input`.
+
+  The document status is `:ok` when at least one chunk passes the classifier's
+  `minimum_input_tokens` validation. Individual insufficient chunks remain in
+  the output with their raw probabilities. This function does not aggregate
+  chunks or apply a document-level decision policy.
+
+  ## Options
+
+    * `:compiler` - The Nx compiler to use. Defaults to `EXLA`.
+    * `:batch_size` - Maximum number of chunks predicted per model invocation.
+      Defaults to `16`.
+    * `:chunk_size` - Maximum token count per chunk. Defaults to the classifier's
+      vector length and cannot exceed it.
+    * `:chunk_overlap` - Overlap as a non-negative token count below
+      `:chunk_size`, or as a fraction from `0.0` up to `1.0`. Defaults to `0.25`.
+
+  ## Example
+
+      predict =
+        BinClass.compile_document_predictor(classifier,
+          chunk_overlap: 128,
+          batch_size: 32
+        )
+
+      %{status: :ok, chunks: chunks} = predict.(large_document)
+  """
+  def compile_document_predictor(%BinClass.Classifier{} = classifier, opts \\ []) do
+    BinClass.DocumentPredictor.compile(classifier, opts)
+  end
+
+  defp fetch_serialized_field!(data, key) do
+    case Map.fetch(data, key) do
+      {:ok, value} -> value
+      :error -> raise ArgumentError, "Serialized classifier is missing #{inspect(key)}"
+    end
+  end
+
+  defp ensure_serialization_modules_loaded! do
+    Enum.each(
+      [
+        BinClass.Model,
+        BinClass.DecisionPolicy,
+        BinClass.Trainer,
+        Nx.Tensor,
+        Nx.BinaryBackend,
+        Nx.Type,
+        Axon.ModelState
+      ],
+      &Code.ensure_loaded!/1
+    )
   end
 end

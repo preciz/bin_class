@@ -1,43 +1,50 @@
 defmodule BinClass.Serving do
-  @moduledoc """
-  Defines the Nx.Serving pipeline for binary classification.
-  """
+  @moduledoc false
 
-  alias BinClass.{Model, Vectorizer, Tokenizer}
+  alias BinClass.{DecisionPolicy, Labels, Model, Vectorizer, Tokenizer}
 
-  @doc """
-  Builds an `Nx.Serving` for classifier inference.
-
-  Important options:
-
-    * `:model_version` - Model architecture version. Defaults to `1` for
-      backward compatibility.
-    * `:decision_policy` - Optional persisted policy from a trained classifier.
-      v7 uses this for calibrated positive thresholds and low-signal safeguards.
-    * `:positive_threshold` - Override the positive class threshold.
-    * `:min_positive_tokens` - Override the minimum active-token count needed
-      for a positive v7 prediction.
-    * `:vector_length` - Fixed input length. Defaults to `512`.
-  """
+  @doc false
   def new(model_params, tokenizer, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [
+        :vector_length,
+        :labels,
+        :batch_size,
+        :compiler,
+        :defn_options,
+        :architecture,
+        :dropout_rate,
+        :decision_policy,
+        :minimum_input_tokens
+      ])
+
     vector_length = Keyword.get(opts, :vector_length, 512)
-    vocab_size = Keyword.get(opts, :vocab_size, Tokenizer.vocab_size())
-    labels = Keyword.get(opts, :labels, [0, 1])
+    tokenizer_metadata = Tokenizer.metadata(tokenizer)
+    vocab_size = tokenizer_metadata.vocab_size
+    pad_token_id = tokenizer_metadata.pad_token_id
+    labels = opts |> Keyword.get(:labels, Labels.default()) |> Labels.validate!()
     batch_size = Keyword.get(opts, :batch_size, 16)
     compiler = Keyword.get(opts, :compiler, EXLA)
     defn_options = Keyword.get(opts, :defn_options, [])
-    model_version = Keyword.get(opts, :model_version, 1)
+    architecture = Keyword.get(opts, :architecture, :cnn)
     dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
-    policy = Keyword.get(opts, :decision_policy) || decision_policy(model_version)
-    positive_threshold = Keyword.get(opts, :positive_threshold, policy.positive_threshold)
-    min_positive_tokens = Keyword.get(opts, :min_positive_tokens, policy.min_positive_tokens)
 
-    use_decision_policy? =
-      decision_policy?(model_version) or Keyword.has_key?(opts, :decision_policy) or
-        Keyword.has_key?(opts, :positive_threshold) or
-        Keyword.has_key?(opts, :min_positive_tokens)
+    Model.validate_vector_length!(architecture, vector_length)
 
-    model = Model.build(model_version, vocab_size, dropout_rate: dropout_rate)
+    policy =
+      opts |> Keyword.get(:decision_policy, %{strategy: :argmax}) |> DecisionPolicy.validate!()
+
+    minimum_input_tokens =
+      opts
+      |> Keyword.get(:minimum_input_tokens, 0)
+      |> DecisionPolicy.validate_minimum_input_tokens!(vector_length)
+
+    model =
+      Model.build(architecture, vocab_size,
+        dropout_rate: dropout_rate,
+        pad_token_id: pad_token_id
+      )
+
     {_, predict_fn} = Axon.build(model, compiler: compiler)
 
     Nx.Serving.new(
@@ -55,14 +62,10 @@ defmodule BinClass.Serving do
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = validate_input(input)
 
-      vectors =
+      {vectors, active_lengths} =
         texts
-        |> Enum.map(&Vectorizer.build(tokenizer, &1, vector_length))
-
-      active_lengths =
-        Enum.map(vectors, fn vector ->
-          Enum.count(vector, &(&1 != 0))
-        end)
+        |> Enum.map(&Vectorizer.build_with_length(tokenizer, &1, vector_length, pad_token_id))
+        |> Enum.unzip()
 
       batch =
         vectors
@@ -79,17 +82,7 @@ defmodule BinClass.Serving do
         |> Nx.to_list()
         |> Enum.zip(active_lengths)
         |> Enum.map(fn {probs, active_length} ->
-          if use_decision_policy? do
-            decode_prediction(
-              probs,
-              labels,
-              positive_threshold,
-              active_length,
-              min_positive_tokens
-            )
-          else
-            decode_prediction(probs, labels)
-          end
+          decode_prediction(probs, labels, policy, active_length, minimum_input_tokens)
         end)
 
       if multi?, do: results, else: List.first(results)
@@ -101,24 +94,17 @@ defmodule BinClass.Serving do
   def validate_input(input), do: {[input], false}
 
   @doc false
-  def decode_prediction(probs, labels) do
-    max_prob = Enum.max(probs)
-    max_index = Enum.find_index(probs, &(&1 == max_prob))
-    build_prediction(probs, labels, max_index, max_prob)
-  end
-
-  @doc false
-  def decode_prediction(probs, labels, positive_threshold, active_length, min_positive_tokens) do
-    positive_prob = Enum.at(probs, 1)
-
-    max_index =
-      if positive_prob >= positive_threshold and active_length >= min_positive_tokens do
-        1
-      else
-        0
-      end
-
-    build_prediction(probs, labels, max_index, Enum.at(probs, max_index))
+  def decode_prediction(probs, labels, policy, active_length, minimum_input_tokens) do
+    if active_length < minimum_input_tokens do
+      %{
+        label: :insufficient_input,
+        confidence: nil,
+        probabilities: build_probabilities(probs, labels)
+      }
+    else
+      max_index = DecisionPolicy.class_index(probs, policy)
+      build_prediction(probs, labels, max_index, Enum.at(probs, max_index))
+    end
   end
 
   defp build_prediction(probs, labels, max_index, max_prob) do
@@ -129,36 +115,18 @@ defmodule BinClass.Serving do
         Enum.at(labels, max_index)
       end
 
-    probabilities =
-      if is_map(labels) do
-        probs
-        |> Enum.with_index()
-        |> Map.new(fn {prob, idx} -> {Map.get(labels, idx), prob} end)
-      else
-        Enum.zip(labels, probs) |> Map.new()
-      end
-
     %{
       label: label,
       confidence: max_prob,
-      probabilities: probabilities
+      probabilities: build_probabilities(probs, labels)
     }
   end
 
-  @doc false
-  def decision_policy(model_version) do
-    %{
-      positive_threshold: positive_threshold(model_version),
-      min_positive_tokens: min_positive_tokens(model_version)
-    }
+  defp build_probabilities(probs, labels) when is_map(labels) do
+    probs
+    |> Enum.with_index()
+    |> Map.new(fn {prob, idx} -> {Map.get(labels, idx), prob} end)
   end
 
-  @doc false
-  def decision_policy?(model_version), do: model_version in [7, :conservative_cnn]
-
-  defp positive_threshold(model_version) when model_version in [7, :conservative_cnn], do: 0.6
-  defp positive_threshold(_model_version), do: 0.5
-
-  defp min_positive_tokens(model_version) when model_version in [7, :conservative_cnn], do: 64
-  defp min_positive_tokens(_model_version), do: 0
+  defp build_probabilities(probs, labels), do: Enum.zip(labels, probs) |> Map.new()
 end

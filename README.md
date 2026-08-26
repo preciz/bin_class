@@ -13,7 +13,7 @@ The package can be installed by adding `bin_class` to your list of dependencies 
 ```elixir
 def deps do
   [
-    {:bin_class, "~> 0.2.1"}
+    {:bin_class, "~> 0.3.0"}
   ]
 end
 ```
@@ -35,20 +35,130 @@ data = [
 ### 2. Train the model
 
 ```elixir
-# Labels can be a list (index 0 and 1) or an explicit map.
-# The default model is v7, a conservative CNN optimized to reduce false positives.
+# Output labels must be distinct binaries in a two-element list or explicit map.
 classifier = BinClass.Trainer.train(data,
   epochs: 10,
-  labels: %{0 => :negative, 1 => :positive}
+  labels: %{0 => "negative", 1 => "positive"}
 )
-
-# Optional: enable auto-tuning to search learning rate and dropout.
-# For production training, tune: false is usually preferred unless you have
-# a stable validation split and enough data.
-classifier = BinClass.Trainer.train(data, tune: true)
 ```
 
-By default, training uses a fixed token vector length of `512`.
+By default, training uses the `:cnn` architecture, a fixed token vector length
+of `512`, output labels `["0", "1"]`, and argmax classification. Restricting
+persisted output labels to binaries keeps saved classifiers compatible with
+safe Erlang term decoding in a fresh VM.
+
+### Soft targets
+
+Training labels may also represent a graded positive-class probability. Enable
+soft targets explicitly and provide values from `0.0` through `1.0`:
+
+```elixir
+data = [
+  %{text: "Clearly negative example", label: 0.0},
+  %{text: "Weak positive evidence", label: 0.2},
+  %{text: "Strong positive evidence", label: 0.9},
+  %{text: "Clearly positive example", label: 1.0}
+]
+
+classifier = BinClass.Trainer.train(data,
+  target_mode: :soft,
+  target_threshold: 0.5
+)
+```
+
+Each value `p` is trained as the distribution `[1 - p, p]`. The target
+threshold is used only to derive binary classes for balancing and validation
+metrics. Hard `0`/`1` targets remain the default. Target settings are retained
+as training metadata when the classifier is serialized.
+
+### Decision policies and input validation
+
+Classification defaults to argmax. Decision behavior is explicit and does not
+depend on model architecture. A fixed positive threshold can be selected with:
+
+```elixir
+classifier = BinClass.Trainer.train(data,
+  decision_policy: {:positive_threshold, 0.7}
+)
+```
+
+Threshold optimization is opt-in and uses the validation partition. Supported
+objectives are `:accuracy`, `:balanced_accuracy`, and `:f1`. An optional
+false-positive cost is subtracted from the objective score as a multiple of the
+false-positive rate. Optimization requires at least one eligible validation
+example from each class:
+
+```elixir
+classifier = BinClass.Trainer.train(data,
+  decision_policy:
+    {:optimize_threshold,
+     [objective: :balanced_accuracy, false_positive_cost: 0.75]}
+)
+```
+
+The selected threshold and optimization metadata are persisted with the
+classifier. To abstain from classifying short inputs, configure input validation
+separately:
+
+```elixir
+classifier = BinClass.Trainer.train(data,
+  minimum_input_tokens: 64
+)
+```
+
+An input below the minimum returns `label: :insufficient_input` and
+`confidence: nil`. Its raw class probabilities remain available in the
+`:probabilities` map. Such inputs are excluded from threshold optimization and
+the classifier's reported validation accuracy.
+
+### Evaluation and calibration
+
+`BinClass.Evaluation` can also evaluate probabilities produced by external or
+multi-stage inference pipelines. Fixed-threshold evaluation returns confusion
+counts, accuracy, precision, recall, specificity, false-positive rate,
+balanced accuracy, F1, Brier score, and the configured objective score:
+
+```elixir
+metrics =
+  BinClass.Evaluation.evaluate(rows,
+    threshold: 0.7,
+    probability: :positive_probability,
+    label: :positive?,
+    target: :soft_target,
+    eligible: :eligible?
+  )
+```
+
+The probability, label, soft target, and eligibility selectors may be map keys
+or one-argument functions. The `:target` and `:eligible` selectors are optional.
+
+Use `calibrate/2` to inspect every distinct decision boundary represented by
+the observed probabilities:
+
+```elixir
+metrics =
+  BinClass.Evaluation.calibrate(rows,
+    objective: :balanced_accuracy,
+    false_positive_cost: 0.75
+  )
+```
+
+Named probability strategies can be calibrated and compared in one call:
+
+```elixir
+selection =
+  BinClass.Evaluation.select(rows,
+    strategies: [
+      maximum: & &1.probabilities.maximum,
+      top_two_mean: & &1.probabilities.top_two_mean
+    ],
+    label: :label,
+    false_positive_cost: 0.75
+  )
+
+selection.strategy
+#=> :top_two_mean
+```
 
 ### 3. Save and Load
 
@@ -59,6 +169,9 @@ BinClass.save(classifier, "my_model.bin")
 
 # Load the model as an Nx.Serving struct (recommended for most apps)
 serving = BinClass.load("my_model.bin")
+
+# Or build a serving from an existing classifier without serializing it
+serving = BinClass.serving(classifier, batch_size: 32)
 ```
 
 ### 4. Optimized Inference
@@ -82,6 +195,38 @@ predict = BinClass.compile_predictor(classifier)
 result = predict.("This is ultra fast.")
 ```
 
+#### C. Inspecting a Complete Document
+
+Compile a document predictor when an input may exceed the classifier's fixed
+vector length. It scans the complete string using overlapping token windows and
+returns every chunk with its exact byte span and raw prediction:
+
+```elixir
+classifier = BinClass.load_classifier("my_model.bin")
+
+predict_document =
+  BinClass.compile_document_predictor(classifier,
+    chunk_overlap: 128,
+    batch_size: 32
+  )
+
+%{status: :ok, chunks: chunks} = predict_document.(large_document)
+
+Enum.each(chunks, fn chunk ->
+  IO.inspect({
+    chunk.start_byte,
+    chunk.end_byte,
+    chunk.token_count,
+    chunk.prediction.probabilities
+  })
+end)
+```
+
+The predictor accepts one document at a time. It does not normalize, truncate,
+aggregate, or apply a separate document-level decision. Byte offsets refer to
+the exact input string, with an inclusive start and exclusive end. Individual
+chunks that fail minimum-token validation retain their raw probabilities.
+
 ## Examples
 
 Check out the `examples/` directory for scripts demonstrating various use cases:
@@ -94,42 +239,53 @@ Check out the `examples/` directory for scripts demonstrating various use cases:
 ## Features
 
 - **Production Ready**: Built on `Nx.Serving` for automatic batching and process isolation.
-- **Unified Serialization**: Save and load the entire classifier state, including tokenizer, model parameters, and calibrated decision policy, from a single file.
-- **Model Versioning**: Decouples model parameters from code changes by explicitly versioning architectures.
-- **Multiple Architectures**: Supports legacy CNN variants, **Sep-SE-CNN** (Separable Convolutions + Squeeze-and-Excitation), **Transformer Encoder**, and v7 **Conservative CNN**.
-- **Conservative v7 Default**: Uses a v1-style CNN backbone with false-positive-aware checkpoint selection, low-signal safeguards, and persisted threshold calibration.
+- **Unified Serialization**: Save and load the entire classifier state, including tokenizer, model parameters, explicit decision policy, input validation, and training metadata, from a single file.
+- **Named Architectures**: Serialized classifiers identify their architecture explicitly by name.
+- **Multiple Architectures**: Supports CNN variants, **Sep-SE-CNN** (Separable Convolutions + Squeeze-and-Excitation), and **Transformer Encoder**.
+- **Explicit Decisions**: Defaults to argmax and supports fixed or validation-optimized positive thresholds independently of architecture.
+- **Input Abstention**: Optionally returns `:insufficient_input` for inputs below a configured token minimum while retaining raw probabilities.
+- **Complete-Document Inspection**: Scans arbitrarily long text into overlapping token windows and returns every chunk's exact input byte span and raw prediction.
 - **Early Stopping**: Automatically halts training when validation loss stops improving.
 - **Automatic Class Balancing**: Handles imbalanced datasets via automated oversampling.
 - **Automated Tokenization**: Automatically builds vocabulary from training data or accepts custom streams.
 - **Efficient**: Uses `EXLA` as the default compiler for high-performance training and inference, with support for other `Nx` backends and compilers.
 
-## Model Versions
+## Model Architectures
 
-Models are versioned so saved classifiers keep loading even when the library default changes:
+Classifiers store one of these named architectures:
 
-- `1` / `:cnn`: original CNN
-- `2` / `:cnn_mixed_pooling`: CNN with mixed pooling
-- `3` / `:multi_scale_cnn`: multi-scale CNN
-- `4` / `:sep_se_cnn`: separable CNN with squeeze-and-excitation
-- `5` / `:parallel_cnn`: parallel CNN
-- `6` / `:transformer`: transformer encoder
-- `7` / `:conservative_cnn`: conservative CNN default
+- `:cnn`: original CNN
+- `:cnn_mixed_pooling`: CNN with mixed pooling
+- `:multi_scale_cnn`: multi-scale CNN
+- `:sep_se_cnn`: separable CNN with squeeze-and-excitation
+- `:parallel_cnn`: parallel CNN
+- `:transformer`: transformer encoder
 
-v7 is based on the original simple CNN backbone, with production behavior tuned for cases where false positives are more costly than false negatives. It selects checkpoints using a false-positive penalty and stores a calibrated positive threshold in the serialized classifier.
+No architecture implicitly changes label thresholds or rejects short inputs.
+Those behaviors are configured through `:decision_policy` and
+`:minimum_input_tokens`.
+
+Numeric architecture identifiers are not accepted. Serialized classifiers must
+contain one of the names above.
 
 ## Production Notes
 
-For production training, start with the defaults unless you have a specific validation strategy:
+For production training, start with argmax unless validation results justify a
+different operating point:
 
 ```elixir
 classifier = BinClass.Trainer.train(data,
   epochs: 10,
-  tune: false,
-  model_version: :conservative_cnn,
+  architecture: :cnn,
   vector_length: 512,
-  false_positive_penalty: 0.5,
-  calibrate_threshold: true
+  decision_policy:
+    {:optimize_threshold,
+     [objective: :accuracy, false_positive_cost: 0.5]},
+  minimum_input_tokens: 64
 )
 ```
 
-The calibrated `decision_policy` is saved with the model and reused by both `BinClass.load/2` and `BinClass.compile_predictor/2`. Older serialized models that do not include this field still load normally and fall back to their version defaults.
+The explicit `decision_policy` and `minimum_input_tokens` are saved with the
+model and reused identically by `BinClass.load/2` and
+`BinClass.compile_predictor/2`. Raw probabilities are returned for every input,
+including inputs that fail minimum-length validation.

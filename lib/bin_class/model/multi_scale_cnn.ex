@@ -6,13 +6,16 @@ defmodule BinClass.Model.MultiScaleCnn do
     # Reduced filters per branch to maintain speed (Total 4 branches * 32 = 128 features)
     branch_filters = Keyword.get(opts, :branch_filters, 32)
     dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
+    pad_token_id = Keyword.get(opts, :pad_token_id, 0)
 
     input = Axon.input("input")
+    masking = BinClass.Model.Masking.new(input, pad_token_id)
 
     embedded =
       input
       |> Axon.embedding(vocab_size, embedding_size)
-      |> Axon.dropout(rate: dropout_rate)
+      |> BinClass.Model.Masking.mask_sequence(masking)
+      |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 0))
 
     # Branch A: 3-gram
     conv3 =
@@ -28,15 +31,15 @@ defmodule BinClass.Model.MultiScaleCnn do
     # This captures both the "strongest signal" (Max) and "average signal" (Avg)
     # for both short phrases (3-gram) and longer idioms (5-gram)
     features = [
-      Axon.global_max_pool(conv3),
-      Axon.global_avg_pool(conv3),
-      Axon.global_max_pool(conv5),
-      Axon.global_avg_pool(conv5)
+      BinClass.Model.Masking.masked_global_max(conv3, masking),
+      BinClass.Model.Masking.masked_global_avg(conv3, masking),
+      BinClass.Model.Masking.masked_global_max(conv5, masking),
+      BinClass.Model.Masking.masked_global_avg(conv5, masking)
     ]
 
     Axon.concatenate(features, axis: -1)
     |> Axon.dense(64, activation: :relu)
-    |> Axon.dropout(rate: dropout_rate)
+    |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 1))
     |> Axon.dense(2, activation: :softmax)
   end
 end

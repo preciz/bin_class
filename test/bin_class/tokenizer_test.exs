@@ -20,9 +20,20 @@ defmodule BinClass.TokenizerTest do
     {:ok, reloaded_tokenizer} = Tokenizers.Tokenizer.from_buffer(json)
     {:ok, encoding2} = Tokenizers.Tokenizer.encode(reloaded_tokenizer, "hello test")
     assert Tokenizers.Encoding.get_ids(encoding) == Tokenizers.Encoding.get_ids(encoding2)
+
+    assert Tokenizer.metadata(reloaded_tokenizer) == Tokenizer.metadata(tokenizer)
   end
 
-  test "vocab size defaults" do
-    assert Tokenizer.vocab_size() == 30_000
+  test "reports actual vocabulary and required special-token IDs" do
+    tokenizer = Tokenizer.train(["hello world"], vocab_size: 100)
+
+    assert %{vocab_size: vocab_size, pad_token_id: pad_token_id, unk_token_id: unk_token_id} =
+             Tokenizer.metadata(tokenizer)
+
+    assert vocab_size == Tokenizers.Tokenizer.get_vocab_size(tokenizer)
+    assert vocab_size < 100
+    assert pad_token_id == Tokenizers.Tokenizer.token_to_id(tokenizer, "[PAD]")
+    assert unk_token_id == Tokenizers.Tokenizer.token_to_id(tokenizer, "[UNK]")
+    assert pad_token_id != unk_token_id
   end
 end

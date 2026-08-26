@@ -1,8 +1,8 @@
 defmodule BinClass.Trainer do
-  alias BinClass.{Model, Vectorizer, Tokenizer}
+  alias BinClass.{DecisionPolicy, Labels, Model, Vectorizer, Tokenizer}
 
   @default_vector_length 512
-  @model_version :conservative_cnn
+  @architecture :cnn
 
   @doc """
   Trains a binary classifier on the given data stream.
@@ -13,106 +13,158 @@ defmodule BinClass.Trainer do
     * `:batch_size` - Batch size for training. Defaults to `32`.
     * `:learning_rate` - Initial learning rate. Defaults to `1.0e-3`.
     * `:decay` - Learning rate decay. Defaults to `1.0e-2`.
-    * `:labels` - Mapping of labels. Can be a list or a map. Defaults to `[0, 1]`.
+    * `:labels` - Output label names as a two-element list of distinct binaries or
+      `%{0 => negative_binary, 1 => positive_binary}`. Defaults to `["0", "1"]`.
+    * `:target_mode` - How training labels are interpreted. `:hard` accepts only `0` and `1`;
+      `:soft` accepts positive-class probabilities from `0.0` through `1.0`. Defaults to `:hard`.
+    * `:target_threshold` - Boundary used to turn soft targets into binary labels for balancing,
+      validation metrics, and threshold calibration. Defaults to `0.5`.
+    * `:balance` - Whether to oversample the smaller class in the training partition. Validation
+      examples are never oversampled. Soft targets are assigned to a class using
+      `:target_threshold`. Defaults to `true`.
     * `:validation_split` - Fraction of data to use for validation. Defaults to `0.1`.
     * `:patience` - Number of epochs to wait for improvement before early stopping. Defaults to `5`.
     * `:compiler` - The Nx compiler to use. Defaults to `EXLA`.
-    * `:model_version` - The architecture version to use. Defaults to `#{@model_version}`.
-    * `:tune` - If `true`, performs automatic hyperparameter tuning for learning rate and dropout. Defaults to `false`.
-    * `:dropout_rate` - Dropout rate for the model (ignored if `:tune` is `true`). Defaults to `0.2`.
-    * `:false_positive_penalty` - Penalty multiplier applied to validation false-positive rate
-      when selecting checkpoints and tuned hyperparameters. Defaults to `0.5` for v7 and `0.0`
-      for older models.
-    * `:calibrate_threshold` - If `true`, calibrates and persists a positive threshold on the
-      validation split. Defaults to `true` for v7 and `false` for older models.
-    * `:threshold_candidates` - Thresholds to evaluate during calibration. Defaults to
-      `0.5..0.9` in `0.05` increments.
+    * `:architecture` - The named architecture to use. Defaults to `#{@architecture}`.
+    * `:dropout_rate` - Dropout rate for the model. Defaults to `0.2`.
+    * `:decision_policy` - How probabilities become labels. Accepts `:argmax`,
+      `{:positive_threshold, threshold}`, `:optimize_threshold`, or
+      `{:optimize_threshold, options}`. Threshold optimization options are `:objective`
+      (`:accuracy`, `:balanced_accuracy`, or `:f1`) and `:false_positive_cost`.
+      Defaults to `:argmax`.
+    * `:minimum_input_tokens` - Inputs with fewer active tokens return
+      `:insufficient_input` at inference. Defaults to `0`.
     * `:vector_length` - Fixed sequence length for tokenization. Defaults to `512`.
-    * `:tokenizer_data` - Custom data stream to train the tokenizer. Defaults to the `:text` field of `data_stream`.
+    * `:seed` - Optional integer seed for deterministic partition ordering, model initialization,
+      and dropout. Defaults to nondeterministic training.
   """
   def train(data_stream, opts \\ []) do
+    opts =
+      Keyword.validate!(opts, [
+        :epochs,
+        :batch_size,
+        :learning_rate,
+        :decay,
+        :labels,
+        :target_mode,
+        :target_threshold,
+        :balance,
+        :validation_split,
+        :patience,
+        :compiler,
+        :architecture,
+        :dropout_rate,
+        :decision_policy,
+        :minimum_input_tokens,
+        :vector_length,
+        :seed
+      ])
+
     clear_recompilation_counters()
-    tokenizer_data_stream = Keyword.get(opts, :tokenizer_data, Stream.map(data_stream, & &1.text))
+    target_mode = Keyword.get(opts, :target_mode, :hard)
+    target_threshold = Keyword.get(opts, :target_threshold, 0.5)
+    balance? = Keyword.get(opts, :balance, true)
+    seed = Keyword.get(opts, :seed)
+
+    vectorization_concurrency = min(4, System.schedulers_online())
+
+    validate_target_options!(target_mode, target_threshold)
+    validate_seed!(seed)
+
     epochs = Keyword.get(opts, :epochs, 10)
     batch_size = Keyword.get(opts, :batch_size, 32)
     learning_rate = Keyword.get(opts, :learning_rate, 1.0e-3)
     decay = Keyword.get(opts, :decay, 1.0e-2)
-    labels = Keyword.get(opts, :labels, [0, 1])
+    labels = opts |> Keyword.get(:labels, Labels.default()) |> Labels.validate!()
     validation_split = Keyword.get(opts, :validation_split, 0.1)
     patience = Keyword.get(opts, :patience, 5)
     compiler = Keyword.get(opts, :compiler, EXLA)
-    model_version = Keyword.get(opts, :model_version, @model_version)
-    tune? = Keyword.get(opts, :tune, false)
-
-    false_positive_penalty =
-      Keyword.get(opts, :false_positive_penalty, default_false_positive_penalty(model_version))
-
-    calibrate_threshold? =
-      Keyword.get(opts, :calibrate_threshold, default_threshold_calibration?(model_version))
-
-    threshold_candidates =
-      Keyword.get(opts, :threshold_candidates, default_threshold_candidates(model_version))
-
-    tokenizer = Tokenizer.train(tokenizer_data_stream)
-    vocab_size = Tokenizer.vocab_size()
-
+    architecture = Keyword.get(opts, :architecture, @architecture)
+    Model.validate_name!(architecture)
+    dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
     vector_length = Keyword.get(opts, :vector_length, @default_vector_length)
 
-    data_stream = balance_data(data_stream)
-    df = Explorer.DataFrame.new(data_stream) |> Explorer.DataFrame.shuffle()
-    series = Explorer.DataFrame.to_series(df)
+    decision_config =
+      opts
+      |> Keyword.get(:decision_policy, :argmax)
+      |> DecisionPolicy.training_config!()
 
-    count = Explorer.Series.count(series["text"])
+    minimum_input_tokens =
+      opts
+      |> Keyword.get(:minimum_input_tokens, 0)
+      |> DecisionPolicy.validate_minimum_input_tokens!()
 
-    data =
-      series["text"]
-      |> Explorer.Series.to_list()
-      |> Task.async_stream(fn text -> Vectorizer.build(tokenizer, text, vector_length) end,
-        timeout: :infinity
+    data_stream = Enum.to_list(data_stream)
+
+    validate_training_configuration!(
+      length(data_stream),
+      epochs,
+      batch_size,
+      validation_split,
+      architecture,
+      vector_length,
+      minimum_input_tokens
+    )
+
+    validate_targets!(data_stream, target_mode)
+    validate_partition_sizes!(length(data_stream), batch_size, validation_split)
+
+    tokenizer = Tokenizer.train(Stream.map(data_stream, & &1.text))
+    tokenizer_metadata = Tokenizer.metadata(tokenizer)
+    vocab_size = tokenizer_metadata.vocab_size
+    pad_token_id = tokenizer_metadata.pad_token_id
+
+    {train_examples, test_examples} =
+      data_stream
+      |> shuffle(seed, :partition)
+      |> split_and_balance_data(
+        batch_size,
+        validation_split,
+        balance?,
+        target_mode,
+        target_threshold,
+        seed
       )
-      |> Enum.flat_map(fn {:ok, vector} -> vector end)
 
-    batch_count = div(count, batch_size)
-    train_batches_count = floor(batch_count * (1.0 - validation_split))
+    {train_data, train_labels} =
+      build_batches(
+        train_examples,
+        tokenizer,
+        vector_length,
+        batch_size,
+        target_mode,
+        vectorization_concurrency,
+        pad_token_id
+      )
 
-    {train_data, test_data} =
-      data
-      |> Nx.tensor(type: :u16)
-      |> Nx.reshape({count, vector_length})
-      |> Nx.to_batched(batch_size, leftover: :discard)
-      |> Enum.split(train_batches_count)
+    {test_data, test_labels} =
+      build_batches(
+        test_examples,
+        tokenizer,
+        vector_length,
+        batch_size,
+        target_mode,
+        vectorization_concurrency,
+        pad_token_id
+      )
 
-    {train_labels, test_labels} =
-      series["label"]
-      |> Explorer.Series.to_tensor()
-      |> Nx.new_axis(-1)
-      |> Nx.equal(Nx.tensor([0, 1]))
-      |> Nx.to_batched(batch_size, leftover: :discard)
-      |> Enum.split(train_batches_count)
-
-    {best_lr, best_dropout} =
-      if tune? do
-        tune_hyperparameters(
-          train_data,
-          train_labels,
-          test_data,
-          test_labels,
-          model_version,
-          vocab_size,
-          compiler,
-          false_positive_penalty
-        )
-      else
-        {learning_rate, Keyword.get(opts, :dropout_rate, 0.2)}
-      end
+    model_opts =
+      [dropout_rate: dropout_rate, pad_token_id: pad_token_id]
+      |> put_seed(seed)
 
     build_model_fn = fn ->
-      Model.build(model_version, vocab_size, dropout_rate: best_dropout)
+      Model.build(architecture, vocab_size, model_opts)
     end
 
-    optimizer = Polaris.Optimizers.adamw(learning_rate: best_lr, decay: decay)
+    optimizer = Polaris.Optimizers.adamw(learning_rate: learning_rate, decay: decay)
 
-    train_model = Axon.Loop.trainer(build_model_fn.(), :categorical_cross_entropy, optimizer)
+    train_model =
+      Axon.Loop.trainer(
+        build_model_fn.(),
+        :categorical_cross_entropy,
+        optimizer,
+        put_seed([], seed)
+      )
 
     best_checkpoint =
       checkpointed_loop_run(%{
@@ -123,10 +175,11 @@ defmodule BinClass.Trainer do
         epochs: epochs,
         patience: patience,
         compiler: compiler,
-        model_version: model_version,
-        false_positive_penalty: false_positive_penalty,
-        calibrate_threshold?: calibrate_threshold?,
-        threshold_candidates: threshold_candidates
+        decision_config: decision_config,
+        minimum_input_tokens: minimum_input_tokens,
+        target_mode: target_mode,
+        target_threshold: target_threshold,
+        pad_token_id: pad_token_id
       })
 
     %BinClass.Classifier{
@@ -136,70 +189,87 @@ defmodule BinClass.Trainer do
       epoch: best_checkpoint.epoch,
       vector_length: vector_length,
       vocab_size: vocab_size,
+      pad_token_id: pad_token_id,
+      unk_token_id: tokenizer_metadata.unk_token_id,
       labels: labels,
-      model_version: model_version,
-      learning_rate: best_lr,
-      dropout_rate: best_dropout,
-      decision_policy: best_checkpoint.decision_policy
+      architecture: architecture,
+      learning_rate: learning_rate,
+      dropout_rate: dropout_rate,
+      decision_policy: best_checkpoint.decision_policy,
+      minimum_input_tokens: minimum_input_tokens,
+      target_mode: target_mode,
+      target_threshold: target_threshold
     }
   end
 
-  defp tune_hyperparameters(
-         train_data,
-         train_labels,
-         test_data,
-         test_labels,
-         model_version,
-         vocab_size,
-         compiler,
-         false_positive_penalty
-       ) do
-    learning_rates = [1.0e-2, 1.0e-3, 5.0e-4, 1.0e-4]
-    dropout_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
+  @doc false
+  def split_and_balance_data(
+        data,
+        batch_size,
+        validation_split,
+        balance?,
+        target_mode,
+        target_threshold,
+        seed
+      ) do
+    batch_count = div(length(data), batch_size)
+    train_batches_count = floor(batch_count * (1.0 - validation_split))
+    train_examples_count = train_batches_count * batch_size
+    {train_data, validation_data} = Enum.split(data, train_examples_count)
 
-    tune_limit = max(1, floor(Enum.count(train_data) * 0.2))
-
-    tune_train_data =
-      Stream.zip(Enum.take(train_data, tune_limit), Enum.take(train_labels, tune_limit))
-
-    tune_test_data = Stream.zip(test_data, test_labels)
-
-    results =
-      for lr <- learning_rates, dr <- dropout_rates do
-        clear_recompilation_counters()
-        build_fn = fn -> Model.build(model_version, vocab_size, dropout_rate: dr) end
-        optimizer = Polaris.Optimizers.adamw(learning_rate: lr, decay: 1.0e-2)
-
-        model = build_fn.()
-        trainer = Axon.Loop.trainer(model, :categorical_cross_entropy, optimizer)
-
-        final_state =
-          trainer
-          |> Axon.Loop.validate(model, tune_test_data)
-          |> Axon.Loop.run(tune_train_data, Axon.ModelState.empty(),
-            epochs: 2,
-            compiler: compiler,
-            garbage_collect: true
-          )
-
-        {_, predict_fn} = Axon.build(model, compiler: compiler)
-
-        metrics =
-          calculate_validation_metrics(predict_fn, final_state, tune_test_data, model_version)
-
-        score = validation_score(metrics, false_positive_penalty)
-
-        %{lr: lr, dr: dr, accuracy: metrics.accuracy, score: score}
+    train_data =
+      if balance? do
+        train_data
+        |> balance_data(target_mode, target_threshold)
+        |> shuffle(seed, :balanced_training)
+      else
+        train_data
       end
 
-    best = Enum.max_by(results, & &1.score)
-
-    {best.lr, best.dr}
+    {train_data, validation_data}
   end
 
-  defp balance_data(data_stream) do
-    data = Enum.to_list(data_stream)
-    {class_0, class_1} = Enum.split_with(data, &(&1.label == 0))
+  defp build_batches(
+         examples,
+         tokenizer,
+         vector_length,
+         batch_size,
+         target_mode,
+         vectorization_concurrency,
+         pad_token_id
+       ) do
+    examples
+    |> Stream.chunk_every(batch_size, batch_size, :discard)
+    |> Task.async_stream(
+      fn batch -> build_batch(batch, tokenizer, vector_length, target_mode, pad_token_id) end,
+      ordered: true,
+      max_concurrency: vectorization_concurrency,
+      timeout: :infinity
+    )
+    |> Enum.map(fn {:ok, batch} -> batch end)
+    |> Enum.unzip()
+  end
+
+  defp build_batch(examples, tokenizer, vector_length, target_mode, pad_token_id) do
+    data =
+      examples
+      |> Enum.map(fn example ->
+        Vectorizer.build(tokenizer, example.text, vector_length, pad_token_id)
+      end)
+      |> Nx.tensor(type: :u16)
+
+    labels =
+      examples
+      |> Enum.map(& &1.label)
+      |> Nx.tensor()
+      |> target_tensor(target_mode)
+
+    {data, labels}
+  end
+
+  defp balance_data(data, target_mode, target_threshold) do
+    {class_0, class_1} =
+      Enum.split_with(data, &(target_class(&1.label, target_mode, target_threshold) == 0))
 
     c0 = length(class_0)
     c1 = length(class_1)
@@ -227,10 +297,11 @@ defmodule BinClass.Trainer do
            epochs: epochs,
            patience: patience,
            compiler: compiler,
-           model_version: model_version,
-           false_positive_penalty: false_positive_penalty,
-           calibrate_threshold?: calibrate_threshold?,
-           threshold_candidates: threshold_candidates
+           decision_config: decision_config,
+           minimum_input_tokens: minimum_input_tokens,
+           target_mode: target_mode,
+           target_threshold: target_threshold,
+           pad_token_id: pad_token_id
          } = map,
          opts \\ []
        ) do
@@ -239,7 +310,7 @@ defmodule BinClass.Trainer do
     opts =
       opts
       |> Keyword.put(:epochs, epochs)
-      |> Keyword.merge(garbage_collect: true, compiler: compiler)
+      |> Keyword.put(:compiler, compiler)
 
     BinClass.Tmp.with_tmp_dir(fn dir ->
       checkpoints_dir = Path.join(dir, "checkpoints")
@@ -269,31 +340,49 @@ defmodule BinClass.Trainer do
               predict_fn,
               checkpoint.step_state.model_state,
               test_data,
-              model_version
+              target_mode,
+              target_threshold,
+              pad_token_id,
+              %{strategy: :argmax},
+              0
             )
 
           %{
             epoch: epoch,
             accuracy: metrics.accuracy,
-            validation_score: validation_score(metrics, false_positive_penalty),
+            validation_score: metrics.accuracy,
             checkpoint: checkpoint
           }
         end)
         |> Enum.max_by(& &1.validation_score)
 
       decision_policy =
-        if calibrate_threshold? and BinClass.Serving.decision_policy?(model_version) do
-          calibrate_decision_policy(
-            predict_fn,
-            best_checkpoint.checkpoint.step_state.model_state,
-            test_data,
-            model_version,
-            false_positive_penalty,
-            threshold_candidates
-          )
-        end
+        resolve_decision_policy(
+          decision_config,
+          predict_fn,
+          best_checkpoint.checkpoint.step_state.model_state,
+          test_data,
+          target_mode,
+          target_threshold,
+          pad_token_id,
+          minimum_input_tokens
+        )
 
-      Map.put(best_checkpoint, :decision_policy, decision_policy)
+      deployment_metrics =
+        calculate_validation_metrics(
+          predict_fn,
+          best_checkpoint.checkpoint.step_state.model_state,
+          test_data,
+          target_mode,
+          target_threshold,
+          pad_token_id,
+          decision_policy,
+          minimum_input_tokens
+        )
+
+      best_checkpoint
+      |> Map.put(:accuracy, deployment_metrics.accuracy)
+      |> Map.put(:decision_policy, decision_policy)
     end)
   end
 
@@ -301,29 +390,64 @@ defmodule BinClass.Trainer do
          predict_fn,
          trained_model_state,
          test_data,
-         model_version,
-         decision_policy \\ nil
+         target_mode,
+         target_threshold,
+         pad_token_id,
+         decision_policy,
+         minimum_input_tokens
        ) do
-    {correct, total, false_positives, true_negatives} =
-      Enum.reduce(test_data, {0, 0, 0, 0}, fn {inputs, labels},
-                                              {correct_acc, count_acc, fp_acc, tn_acc} ->
-        preds = predict_fn.(trained_model_state, inputs)
+    test_data
+    |> prediction_batches(predict_fn, trained_model_state)
+    |> calculate_prediction_metrics(
+      target_mode,
+      target_threshold,
+      pad_token_id,
+      decision_policy,
+      minimum_input_tokens
+    )
+  end
 
-        pred_labels = prediction_labels(preds, inputs, model_version, decision_policy)
-        true_labels = Nx.argmax(labels, axis: -1)
+  defp prediction_batches(test_data, predict_fn, trained_model_state) do
+    Stream.map(test_data, fn {inputs, labels} ->
+      {predict_fn.(trained_model_state, inputs), inputs, labels}
+    end)
+  end
 
-        correct = Nx.equal(pred_labels, true_labels) |> Nx.sum() |> Nx.to_number()
-        false_positives = false_positive_count(pred_labels, true_labels)
-        true_negatives = true_negative_count(pred_labels, true_labels)
+  defp calculate_prediction_metrics(
+         prediction_batches,
+         target_mode,
+         target_threshold,
+         pad_token_id,
+         decision_policy,
+         minimum_input_tokens
+       ) do
+    {correct, total, false_positives, true_negatives, insufficient_inputs} =
+      Enum.reduce(prediction_batches, {0, 0, 0, 0, 0}, fn {preds, inputs, labels},
+                                                          {correct_acc, count_acc, fp_acc, tn_acc,
+                                                           insufficient_acc} ->
+        pred_labels = prediction_labels(preds, decision_policy)
+        true_labels = target_labels(labels, target_mode, target_threshold)
+        eligible_inputs = eligible_inputs(inputs, pad_token_id, minimum_input_tokens)
+
+        {correct, eligible_count, false_positives, true_negatives} =
+          validation_counts(pred_labels, true_labels, eligible_inputs)
+
         batch_size = Nx.shape(inputs) |> elem(0)
 
         {
           correct_acc + correct,
-          count_acc + batch_size,
+          count_acc + eligible_count,
           fp_acc + false_positives,
-          tn_acc + true_negatives
+          tn_acc + true_negatives,
+          insufficient_acc + batch_size - eligible_count
         }
       end)
+
+    if total == 0 do
+      raise ArgumentError,
+            ":minimum_input_tokens excludes every validation example; lower it or provide " <>
+              "longer validation inputs"
+    end
 
     false_positive_denominator = false_positives + true_negatives
 
@@ -338,47 +462,55 @@ defmodule BinClass.Trainer do
       accuracy: correct / total,
       false_positive_rate: false_positive_rate,
       false_positives: false_positives,
-      true_negatives: true_negatives
+      true_negatives: true_negatives,
+      insufficient_inputs: insufficient_inputs
     }
   end
 
-  defp prediction_labels(preds, inputs, model_version)
-       when model_version in [7, :conservative_cnn] do
-    policy = BinClass.Serving.decision_policy(model_version)
+  defp validation_counts(pred_labels, true_labels, eligible_inputs) do
+    correct =
+      pred_labels
+      |> Nx.equal(true_labels)
+      |> Nx.logical_and(eligible_inputs)
+      |> Nx.sum()
 
-    prediction_labels_with_policy(preds, inputs, policy)
+    eligible_count = Nx.sum(eligible_inputs)
+    predicted_positive? = Nx.equal(pred_labels, 1)
+    true_negative? = Nx.equal(true_labels, 0)
+
+    false_positives =
+      predicted_positive?
+      |> Nx.logical_and(true_negative?)
+      |> Nx.logical_and(eligible_inputs)
+      |> Nx.sum()
+
+    true_negatives =
+      pred_labels
+      |> Nx.equal(0)
+      |> Nx.logical_and(true_negative?)
+      |> Nx.logical_and(eligible_inputs)
+      |> Nx.sum()
+
+    [correct, eligible_count, false_positives, true_negatives]
+    |> Nx.stack()
+    |> Nx.backend_transfer(Nx.BinaryBackend)
+    |> Nx.to_flat_list()
+    |> List.to_tuple()
   end
 
-  defp prediction_labels(preds, _inputs, _model_version) do
-    Nx.argmax(preds, axis: -1)
-  end
+  defp prediction_labels(preds, %{strategy: :argmax}), do: Nx.argmax(preds, axis: -1)
 
-  defp prediction_labels(preds, inputs, _model_version, decision_policy)
-       when is_map(decision_policy) do
-    prediction_labels_with_policy(preds, inputs, decision_policy)
-  end
+  defp prediction_labels(preds, %{
+         strategy: :positive_threshold,
+         positive_threshold: threshold
+       }) do
+    batch_size = Nx.shape(preds) |> elem(0)
 
-  defp prediction_labels(preds, inputs, model_version, _decision_policy) do
-    prediction_labels(preds, inputs, model_version)
-  end
-
-  defp prediction_labels_with_policy(preds, inputs, policy) do
-    batch_size = Nx.shape(inputs) |> elem(0)
-
-    positive_probs =
+    positive? =
       preds
       |> Nx.slice([0, 1], [batch_size, 1])
       |> Nx.squeeze(axes: [1])
-
-    active_lengths =
-      inputs
-      |> Nx.not_equal(0)
-      |> Nx.sum(axes: [-1])
-
-    positive? =
-      positive_probs
-      |> Nx.greater_equal(policy.positive_threshold)
-      |> Nx.logical_and(Nx.greater_equal(active_lengths, policy.min_positive_tokens))
+      |> Nx.greater_equal(threshold)
 
     Nx.select(
       positive?,
@@ -387,81 +519,251 @@ defmodule BinClass.Trainer do
     )
   end
 
-  defp false_positive_count(pred_labels, true_labels) do
-    pred_labels
-    |> Nx.equal(1)
-    |> Nx.logical_and(Nx.equal(true_labels, 0))
-    |> Nx.sum()
-    |> Nx.to_number()
+  defp eligible_inputs(inputs, pad_token_id, minimum_input_tokens) do
+    inputs
+    |> Nx.not_equal(pad_token_id)
+    |> Nx.sum(axes: [-1])
+    |> Nx.greater_equal(minimum_input_tokens)
   end
 
-  defp true_negative_count(pred_labels, true_labels) do
-    pred_labels
-    |> Nx.equal(0)
-    |> Nx.logical_and(Nx.equal(true_labels, 0))
-    |> Nx.sum()
-    |> Nx.to_number()
+  defp target_tensor(targets, :hard) do
+    targets
+    |> Nx.new_axis(-1)
+    |> Nx.equal(Nx.tensor([0, 1]))
   end
 
-  defp validation_score(metrics, false_positive_penalty) do
-    metrics.accuracy - false_positive_penalty * metrics.false_positive_rate
+  defp target_tensor(targets, :soft) do
+    positive_targets =
+      targets
+      |> Nx.as_type(:f32)
+      |> Nx.new_axis(-1)
+
+    negative_targets = Nx.subtract(1.0, positive_targets)
+    Nx.concatenate([negative_targets, positive_targets], axis: -1)
   end
 
-  defp default_false_positive_penalty(model_version)
-       when model_version in [7, :conservative_cnn],
-       do: 0.5
+  defp target_labels(labels, :hard, _target_threshold) do
+    Nx.argmax(labels, axis: -1)
+  end
 
-  defp default_false_positive_penalty(_model_version), do: 0.0
+  defp target_labels(labels, :soft, target_threshold) do
+    batch_size = Nx.shape(labels) |> elem(0)
 
-  defp calibrate_decision_policy(
+    labels
+    |> Nx.slice([0, 1], [batch_size, 1])
+    |> Nx.squeeze(axes: [1])
+    |> Nx.greater_equal(target_threshold)
+  end
+
+  defp target_class(label, :hard, _target_threshold) do
+    if label == 0, do: 0, else: 1
+  end
+
+  defp target_class(label, :soft, target_threshold) do
+    if label >= target_threshold, do: 1, else: 0
+  end
+
+  defp validate_target_options!(target_mode, target_threshold) do
+    unless target_mode in [:hard, :soft] do
+      raise ArgumentError,
+            ":target_mode must be :hard or :soft, got: #{inspect(target_mode)}"
+    end
+
+    unless is_number(target_threshold) and target_threshold >= 0 and target_threshold <= 1 do
+      raise ArgumentError,
+            ":target_threshold must be a number between 0 and 1, got: #{inspect(target_threshold)}"
+    end
+  end
+
+  defp validate_targets!(data, target_mode) do
+    Enum.each(data, fn row ->
+      label = Map.fetch!(row, :label)
+
+      valid? =
+        case target_mode do
+          :hard -> is_number(label) and (label == 0 or label == 1)
+          :soft -> is_number(label) and label >= 0 and label <= 1
+        end
+
+      unless valid? do
+        expected =
+          if target_mode == :soft,
+            do: "a number between 0 and 1",
+            else: "0 or 1"
+
+        raise ArgumentError,
+              "invalid #{target_mode} target #{inspect(label)}; expected #{expected}"
+      end
+    end)
+  end
+
+  defp validate_seed!(nil), do: :ok
+  defp validate_seed!(seed) when is_integer(seed), do: :ok
+
+  defp validate_seed!(seed) do
+    raise ArgumentError, ":seed must be an integer or nil, got: #{inspect(seed)}"
+  end
+
+  defp validate_training_configuration!(
+         data_size,
+         epochs,
+         batch_size,
+         validation_split,
+         architecture,
+         vector_length,
+         minimum_input_tokens
+       ) do
+    unless is_integer(epochs) and epochs > 0 do
+      raise ArgumentError, ":epochs must be a positive integer, got: #{inspect(epochs)}"
+    end
+
+    unless is_integer(batch_size) and batch_size > 0 do
+      raise ArgumentError, ":batch_size must be a positive integer, got: #{inspect(batch_size)}"
+    end
+
+    unless is_number(validation_split) and validation_split > 0 and validation_split < 1 do
+      raise ArgumentError,
+            ":validation_split must be a number greater than 0 and less than 1, " <>
+              "got: #{inspect(validation_split)}"
+    end
+
+    Model.validate_vector_length!(architecture, vector_length)
+
+    if minimum_input_tokens > vector_length do
+      raise ArgumentError,
+            ":minimum_input_tokens cannot exceed :vector_length, got " <>
+              "#{minimum_input_tokens} and #{vector_length}"
+    end
+
+    if data_size == 0 do
+      raise ArgumentError, "training data must not be empty"
+    end
+  end
+
+  defp validate_partition_sizes!(data_size, batch_size, validation_split) do
+    batch_count = div(data_size, batch_size)
+    train_batches_count = floor(batch_count * (1.0 - validation_split))
+    train_examples_count = train_batches_count * batch_size
+    validation_examples_count = data_size - train_examples_count
+    validation_batches_count = div(validation_examples_count, batch_size)
+
+    if train_batches_count == 0 or validation_batches_count == 0 do
+      raise ArgumentError,
+            "training configuration must produce at least one full training batch and " <>
+              "one full validation batch, but #{data_size} examples with batch_size " <>
+              "#{batch_size} and validation_split #{inspect(validation_split)} produce " <>
+              "#{train_batches_count} training batches and #{validation_batches_count} " <>
+              "validation batches; reduce :batch_size, adjust :validation_split, or " <>
+              "provide more data"
+    end
+  end
+
+  defp shuffle(data, nil, _salt), do: Enum.shuffle(data)
+
+  defp shuffle(data, seed, salt) do
+    data
+    |> Enum.with_index()
+    |> Enum.sort_by(fn {row, index} ->
+      identity = Map.get(row, :id, {Map.get(row, :text), Map.get(row, :label)})
+      :crypto.hash(:sha256, :erlang.term_to_binary({seed, salt, identity, index}))
+    end)
+    |> Enum.map(&elem(&1, 0))
+  end
+
+  defp put_seed(opts, nil), do: opts
+  defp put_seed(opts, seed), do: Keyword.put(opts, :seed, seed)
+
+  defp resolve_decision_policy(
+         {:fixed, policy},
+         _predict_fn,
+         _trained_model_state,
+         _test_data,
+         _target_mode,
+         _target_threshold,
+         _pad_token_id,
+         _minimum_input_tokens
+       ),
+       do: policy
+
+  defp resolve_decision_policy(
+         {:optimize, optimization},
          predict_fn,
          trained_model_state,
          test_data,
-         model_version,
-         false_positive_penalty,
-         threshold_candidates
+         target_mode,
+         target_threshold,
+         pad_token_id,
+         minimum_input_tokens
        ) do
-    base_policy = BinClass.Serving.decision_policy(model_version)
+    prediction_batches =
+      test_data
+      |> prediction_batches(predict_fn, trained_model_state)
+      |> Enum.to_list()
 
-    threshold_candidates
-    |> Enum.map(fn threshold ->
-      policy = %{base_policy | positive_threshold: threshold}
+    calibration_opts =
+      optimization
+      |> Map.to_list()
+      |> Keyword.put(:eligible, :eligible)
 
-      metrics =
-        calculate_validation_metrics(
-          predict_fn,
-          trained_model_state,
-          test_data,
-          model_version,
-          policy
-        )
+    result =
+      prediction_batches
+      |> calibration_rows(
+        target_mode,
+        target_threshold,
+        pad_token_id,
+        minimum_input_tokens
+      )
+      |> BinClass.Evaluation.calibrate(calibration_opts)
 
-      %{
-        policy: policy,
-        score: validation_score(metrics, false_positive_penalty),
-        accuracy: metrics.accuracy,
-        false_positive_rate: metrics.false_positive_rate
-      }
-    end)
-    |> Enum.max_by(fn result ->
-      {result.score, result.accuracy, result.policy.positive_threshold}
-    end)
-    |> then(fn result ->
-      result.policy
-      |> Map.put(:validation_score, result.score)
-      |> Map.put(:validation_accuracy, result.accuracy)
-      |> Map.put(:validation_false_positive_rate, result.false_positive_rate)
-    end)
+    %{
+      strategy: :positive_threshold,
+      positive_threshold: result.threshold,
+      optimization:
+        Map.merge(optimization, %{
+          validation_score: result.score,
+          validation_accuracy: result.accuracy,
+          validation_balanced_accuracy: result.balanced_accuracy,
+          validation_f1: result.f1,
+          validation_false_positive_rate: result.false_positive_rate
+        })
+    }
   end
 
-  defp default_threshold_calibration?(model_version)
-       when model_version in [7, :conservative_cnn],
-       do: true
+  defp calibration_rows(
+         prediction_batches,
+         target_mode,
+         target_threshold,
+         pad_token_id,
+         minimum_input_tokens
+       ) do
+    Enum.flat_map(prediction_batches, fn {predictions, inputs, labels} ->
+      batch_size = Nx.shape(inputs) |> elem(0)
 
-  defp default_threshold_calibration?(_model_version), do: false
+      positive_probabilities =
+        predictions
+        |> Nx.slice([0, 1], [batch_size, 1])
+        |> Nx.squeeze(axes: [1])
 
-  defp default_threshold_candidates(_model_version) do
-    for threshold <- 50..90//5, do: threshold / 100
+      eligible =
+        inputs
+        |> Nx.not_equal(pad_token_id)
+        |> Nx.sum(axes: [1])
+        |> Nx.greater_equal(minimum_input_tokens)
+
+      true_labels = target_labels(labels, target_mode, target_threshold)
+
+      [positive_probabilities, Nx.as_type(eligible, :f32), Nx.as_type(true_labels, :f32)]
+      |> Nx.stack(axis: 1)
+      |> Nx.backend_transfer(Nx.BinaryBackend)
+      |> Nx.to_list()
+      |> Enum.map(fn [probability, eligible?, positive?] ->
+        %{
+          probability: probability,
+          eligible: eligible? == 1.0,
+          label: positive? == 1.0
+        }
+      end)
+    end)
   end
 
   defp clear_recompilation_counters do

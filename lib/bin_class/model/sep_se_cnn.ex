@@ -7,13 +7,16 @@ defmodule BinClass.Model.SepSeCnn do
     # Increased to 48 because SepConv is cheap, so we can afford more channels than V3 (32)
     branch_filters = Keyword.get(opts, :branch_filters, 48)
     dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
+    pad_token_id = Keyword.get(opts, :pad_token_id, 0)
 
     input = Axon.input("input")
+    masking = BinClass.Model.Masking.new(input, pad_token_id)
 
     embedded =
       input
       |> Axon.embedding(vocab_size, embedding_size)
-      |> Axon.dropout(rate: dropout_rate)
+      |> BinClass.Model.Masking.mask_sequence(masking)
+      |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 0))
 
     # Branches for 3, 4, 5-grams
     branches =
@@ -21,13 +24,13 @@ defmodule BinClass.Model.SepSeCnn do
       |> Enum.map(fn k ->
         embedded
         |> depthwise_separable_conv(k, embedding_size, branch_filters)
-        |> se_block(branch_filters)
-        |> mixed_pooling()
+        |> se_block(masking, branch_filters)
+        |> mixed_pooling(masking)
       end)
 
     Axon.concatenate(branches, axis: -1)
     |> Axon.dense(64, activation: :relu)
-    |> Axon.dropout(rate: dropout_rate)
+    |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 1))
     |> Axon.dense(2, activation: :softmax)
   end
 
@@ -50,7 +53,7 @@ defmodule BinClass.Model.SepSeCnn do
     |> Axon.conv(output_channels, kernel_size: 1, activation: :relu)
   end
 
-  defp se_block(x, channels, reduction \\ 8) do
+  defp se_block(x, masking, channels, reduction \\ 8) do
     # Squeeze-and-Excitation Block
     # Re-calibrates channel importance based on global context
 
@@ -60,7 +63,7 @@ defmodule BinClass.Model.SepSeCnn do
     # keep_axes: true ensures we get [Batch, 1, Channels] for broadcasting
     se_weights =
       x
-      |> Axon.global_avg_pool(keep_axes: true)
+      |> BinClass.Model.Masking.masked_global_avg(masking, keep_axes: true)
       |> Axon.dense(squeeze_channels, activation: :relu)
       |> Axon.dense(channels, activation: :sigmoid)
 
@@ -68,12 +71,12 @@ defmodule BinClass.Model.SepSeCnn do
     Axon.multiply(x, se_weights)
   end
 
-  defp mixed_pooling(x) do
+  defp mixed_pooling(x, masking) do
     # Concatenate Global Max and Global Avg pooling
     Axon.concatenate(
       [
-        Axon.global_max_pool(x),
-        Axon.global_avg_pool(x)
+        BinClass.Model.Masking.masked_global_max(x, masking),
+        BinClass.Model.Masking.masked_global_avg(x, masking)
       ],
       axis: -1
     )

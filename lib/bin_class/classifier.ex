@@ -2,9 +2,19 @@ defmodule BinClass.Classifier do
   @moduledoc """
   A struct representing a trained binary classifier.
 
-  The optional `:decision_policy` field stores calibrated inference settings
-  such as `:positive_threshold` and `:min_positive_tokens`. It is persisted
-  with newly serialized classifiers and may be `nil` for older saved models.
+  The required `:decision_policy` field controls how probabilities become a
+  class label. It is either `%{strategy: :argmax}` or a positive-threshold
+  policy. `:minimum_input_tokens` is a separate input-validity requirement;
+  inputs below it produce `:insufficient_input` without hiding probabilities.
+
+  `:target_mode` and `:target_threshold` record whether hard or soft targets
+  were used during training and how soft targets were binarized for metrics.
+  They do not change inference behavior.
+
+  `:vocab_size`, `:pad_token_id`, and `:unk_token_id` are derived from the
+  trained tokenizer and validated when the classifier is serialized or loaded.
+  Persisted output labels are exactly two distinct binaries.
+
   """
 
   defstruct [
@@ -13,12 +23,17 @@ defmodule BinClass.Classifier do
     :labels,
     :vector_length,
     :vocab_size,
+    :pad_token_id,
+    :unk_token_id,
     :accuracy,
     :epoch,
-    :model_version,
+    :architecture,
     :learning_rate,
     :dropout_rate,
-    :decision_policy
+    :decision_policy,
+    :minimum_input_tokens,
+    :target_mode,
+    :target_threshold
   ]
 
   defimpl Inspect do
@@ -29,15 +44,20 @@ defmodule BinClass.Classifier do
         "#BinClass.Classifier<",
         to_doc(
           %{
-            model_version: classifier.model_version,
+            architecture: classifier.architecture,
             labels: classifier.labels,
             vector_length: classifier.vector_length,
             vocab_size: classifier.vocab_size,
+            pad_token_id: classifier.pad_token_id,
+            unk_token_id: classifier.unk_token_id,
             accuracy: classifier.accuracy,
             epoch: classifier.epoch,
             learning_rate: classifier.learning_rate,
             dropout_rate: classifier.dropout_rate,
-            decision_policy: classifier.decision_policy
+            decision_policy: classifier.decision_policy,
+            minimum_input_tokens: classifier.minimum_input_tokens,
+            target_mode: classifier.target_mode,
+            target_threshold: classifier.target_threshold
           },
           opts
         ),

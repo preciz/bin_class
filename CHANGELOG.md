@@ -2,6 +2,121 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Added `BinClass.compile_document_predictor/2` for scanning one complete text
+  with overlapping token windows. It returns every chunk's exact original byte
+  span, token count, validation status, and raw prediction without truncating,
+  normalizing, aggregating, or grouping documents.
+- Added the public `BinClass.Evaluation` API for fixed-threshold metrics, exact
+  threshold calibration, and selection among named probability strategies.
+  Evaluation supports arbitrary row accessors, soft Brier targets, eligibility
+  filtering, multiple objectives, and explicit false-positive cost.
+- Added explicit `:decision_policy` training configuration. Classification now
+  supports argmax, fixed positive thresholds, and opt-in validation threshold
+  optimization using accuracy, balanced accuracy, or F1 with an optional
+  false-positive cost.
+- Added persisted `:minimum_input_tokens` validation. Short inputs now return
+  `:insufficient_input` while retaining their raw class probabilities.
+
+### Changed
+
+- Argmax is now the default decision policy for every architecture, and `:cnn`
+  is the default architecture.
+- Decision policies and input validation no longer derive from model
+  architecture. Serving and compiled prediction use the same persisted policy.
+- Serialized classifiers now require a tagged decision policy and an explicit
+  `minimum_input_tokens` value. Classifiers using the earlier policy schema must
+  be retrained.
+- Output labels must now be two distinct binaries and default to `["0", "1"]`,
+  preventing custom label atoms from making safe deserialization fail in a
+  fresh VM.
+- Vector lengths are now validated against each architecture's convolution
+  requirements before tokenizer or model setup.
+- Threshold optimization excludes inputs that fail minimum-token validation
+  and requires eligible validation examples from both classes.
+- Removed the model-side short-input negative bias from the Transformer graph.
+- Training accepts an optional seed for deterministic data ordering, model
+  initialization, and dropout state.
+- Threshold calibration now computes validation predictions once and reuses
+  them across all threshold candidates.
+- Serving and compiled prediction now obtain active lengths directly from the
+  truncated tokenizer encoding instead of rescanning padded ID vectors.
+- Model graphs now share one token mask and active-length node across embedding
+  masking, pooling, and attention.
+- All architectures now mask padded embeddings and exclude padded positions
+  from global pooling. The Transformer also masks padded attention keys.
+- Training now sizes model embeddings from the tokenizer's actual vocabulary
+  instead of the requested maximum vocabulary size.
+- Vectorization, model construction, validation, serving, and compiled
+  prediction now use the tokenizer's actual padding-token ID.
+- Serialized classifiers now store and validate `vocab_size`, `pad_token_id`,
+  and `unk_token_id` against the embedded tokenizer JSON. Classifiers written
+  with the previous schema must be retrained.
+- Added `BinClass.Tokenizer.metadata/1` and changed the vectorizer's
+  three-argument `build` function to `BinClass.Vectorizer.build/4`.
+
+### Removed
+
+- Removed the redundant `:conservative_cnn` architecture. Use `:cnn` with an
+  explicit `:decision_policy` and `:minimum_input_tokens` configuration instead.
+- Removed the built-in `:tune` training option and its learning-rate/dropout
+  grid search. Supply explicit `:learning_rate` and `:dropout_rate` values or
+  run external experiments instead.
+- Removed the `:vectorization_concurrency` and `:threshold_candidates` training
+  options. Vectorization concurrency is selected automatically, and threshold
+  calibration now evaluates every distinct decision partition in the
+  validation predictions and centers thresholds between adjacent probabilities.
+- Removed the `:calibrate_threshold` and `:false_positive_penalty` training
+  options. Threshold optimization is now requested explicitly through
+  `:decision_policy`.
+- Removed the `:positive_threshold` and `:min_positive_tokens` serving
+  overrides. Inference now always uses the classifier's persisted policy.
+- Removed the unused Explorer dependency and its test-only tensor conversion
+  helper.
+- Removed legacy deserialization defaults. Saved classifiers must now contain
+  the complete current schema.
+- Removed the test-only tokenizer default-vocabulary accessor and redundant
+  six-argument training split wrapper.
+- Removed tokenizer metadata overrides from the low-level serving constructor;
+  serving now always derives vocabulary size and special-token IDs from the tokenizer.
+- Replaced the low-level public serving constructor with `BinClass.serving/2`,
+  which accepts a complete classifier and only runtime serving options. The
+  implementation module is now internal.
+
+### Fixed
+
+- Predictions no longer change when the same token sequence receives a
+  different amount of right-padding.
+- Padding no longer uses the unknown-token ID, so unknown tokens remain model
+  input and count toward minimum-input validation.
+
+## [0.3.0] - 2026-08-24
+
+### Added
+
+- Added opt-in soft training targets, accepting positive-class probabilities
+  from `0.0` through `1.0` and converting them to `[1 - p, p]` distributions.
+- Added configurable target boundaries for balancing, validation metrics, and
+  decision-threshold calibration.
+- Added serialized target-mode metadata.
+
+### Changed
+
+- Renamed the classifier field, training and serving option, and serialized key
+  from `model_version` to `architecture`.
+- Serialized classifiers now require an explicit named `architecture`. Existing
+  binaries using the old schema must be retrained.
+
+### Removed
+
+- Removed numeric model architecture identifiers. Training, serving, serialization,
+  and deserialization now require named architectures such as `:cnn` or
+  `:conservative_cnn`.
+- Removed all fallback handling for the previous model-version schema.
+
 ## [0.2.1] - 2026-08-20
 
 ### Changed
@@ -97,7 +212,8 @@ All notable changes to this project are documented in this file.
 
 - Added and refined README, examples documentation, and module documentation for the initial Hex release.
 
-[0.2.1]: https://github.com/preciz/bin_class/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/preciz/bin_class/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/preciz/bin_class/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/preciz/bin_class/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/preciz/bin_class/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/preciz/bin_class/compare/v0.1.1...v0.1.2
