@@ -1,6 +1,6 @@
 defmodule BinClass.VectorizerTest do
   use ExUnit.Case
-  alias BinClass.{Vectorizer, Tokenizer}
+  alias BinClass.{Tokenizer, Vectorizer}
 
   setup do
     data = ["hello world", "this is a test", "another example"]

@@ -1,6 +1,6 @@
 defmodule BinClass.Model.ParallelCnn do
   @moduledoc false
-  alias BinClass.Model.Config
+  alias BinClass.Model.{Config, Masking}
 
   def build(vocab_size, opts \\ []) do
     opts = Config.validate_options!(vocab_size, opts)
@@ -10,12 +10,12 @@ defmodule BinClass.Model.ParallelCnn do
     pad_token_id = Keyword.fetch!(opts, :pad_token_id)
 
     input = Axon.input("input")
-    masking = BinClass.Model.Masking.new(input, pad_token_id)
+    masking = Masking.new(input, pad_token_id)
 
     embedded =
       input
       |> Axon.embedding(vocab_size, embedding_size)
-      |> BinClass.Model.Masking.mask_sequence(masking)
+      |> Masking.mask_sequence(masking)
       |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
 
     # 3 Parallel branches with Kernels 1, 3, 5
@@ -36,8 +36,8 @@ defmodule BinClass.Model.ParallelCnn do
   defp mixed_pooling(x, masking) do
     Axon.concatenate(
       [
-        BinClass.Model.Masking.masked_global_max(x, masking),
-        BinClass.Model.Masking.masked_global_avg(x, masking)
+        Masking.masked_global_max(x, masking),
+        Masking.masked_global_avg(x, masking)
       ],
       axis: -1
     )

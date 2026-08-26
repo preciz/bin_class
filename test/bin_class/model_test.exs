@@ -2,6 +2,17 @@ defmodule BinClass.ModelTest do
   use ExUnit.Case
   alias BinClass.Model
 
+  alias BinClass.Model.{
+    Cnn,
+    CnnMixedPooling,
+    Config,
+    Masking,
+    MultiScaleCnn,
+    ParallelCnn,
+    SepSeCnn,
+    Transformer
+  }
+
   test "builds cnn model" do
     vocab_size = 100
     model = Model.build(:cnn, vocab_size)
@@ -14,7 +25,7 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model_opts
 
     # Direct call
-    assert %Axon{} = BinClass.Model.Cnn.build(vocab_size)
+    assert %Axon{} = Cnn.build(vocab_size)
   end
 
   test "builds cnn_mixed_pooling model" do
@@ -33,7 +44,7 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model_opts
 
     # Direct call
-    assert %Axon{} = BinClass.Model.CnnMixedPooling.build(vocab_size)
+    assert %Axon{} = CnnMixedPooling.build(vocab_size)
   end
 
   test "builds multi_scale_cnn model" do
@@ -52,7 +63,7 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model_opts
 
     # Direct call
-    assert %Axon{} = BinClass.Model.MultiScaleCnn.build(vocab_size)
+    assert %Axon{} = MultiScaleCnn.build(vocab_size)
   end
 
   test "builds sep_se_cnn model" do
@@ -71,7 +82,7 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model_opts
 
     # Direct call
-    assert %Axon{} = BinClass.Model.SepSeCnn.build(vocab_size)
+    assert %Axon{} = SepSeCnn.build(vocab_size)
   end
 
   test "builds parallel_cnn model" do
@@ -86,7 +97,7 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model_opts
 
     # Direct call
-    assert %Axon{} = BinClass.Model.ParallelCnn.build(vocab_size)
+    assert %Axon{} = ParallelCnn.build(vocab_size)
   end
 
   test "builds transformer model" do
@@ -101,14 +112,14 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model_opts
 
     # Direct call
-    assert %Axon{} = BinClass.Model.Transformer.build(vocab_size)
+    assert %Axon{} = Transformer.build(vocab_size)
   end
 
   test "transformer model execution does not impose an input-length decision" do
     vocab_size = 50
 
     model =
-      BinClass.Model.Transformer.build(vocab_size,
+      Transformer.build(vocab_size,
         embedding_size: 8,
         ff_dim: 16,
         dropout_rate: 0.0
@@ -271,12 +282,12 @@ defmodule BinClass.ModelTest do
 
   test "dispatcher, direct model builders, and masking reject unknown options" do
     modules = %{
-      cnn: BinClass.Model.Cnn,
-      cnn_mixed_pooling: BinClass.Model.CnnMixedPooling,
-      multi_scale_cnn: BinClass.Model.MultiScaleCnn,
-      sep_se_cnn: BinClass.Model.SepSeCnn,
-      parallel_cnn: BinClass.Model.ParallelCnn,
-      transformer: BinClass.Model.Transformer
+      cnn: Cnn,
+      cnn_mixed_pooling: CnnMixedPooling,
+      multi_scale_cnn: MultiScaleCnn,
+      sep_se_cnn: SepSeCnn,
+      parallel_cnn: ParallelCnn,
+      transformer: Transformer
     }
 
     for {architecture, module} <- modules do
@@ -285,15 +296,15 @@ defmodule BinClass.ModelTest do
       end
 
       assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, fn ->
-        apply(module, :build, [100, [not_an_option: true]])
+        module.build(100, not_an_option: true)
       end
     end
 
     input = Axon.input("input")
-    masking = BinClass.Model.Masking.new(input, 0)
+    masking = Masking.new(input, 0)
 
     assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, fn ->
-      BinClass.Model.Masking.masked_global_avg(input, masking, not_an_option: true)
+      Masking.masked_global_avg(input, masking, not_an_option: true)
     end
   end
 
@@ -328,28 +339,28 @@ defmodule BinClass.ModelTest do
     end
 
     assert_raise ArgumentError, ~r/:embedding_size must be a positive integer/, fn ->
-      BinClass.Model.Cnn.build(100, embedding_size: 0)
+      Cnn.build(100, embedding_size: 0)
     end
 
     assert_raise ArgumentError, ~r/:seed must be an integer or nil/, fn ->
-      BinClass.Model.Config.dropout_options(:random, 0.2, 0)
+      Config.dropout_options(:random, 0.2, 0)
     end
 
     input = Axon.input("input")
-    masking = BinClass.Model.Masking.new(input, 0)
+    masking = Masking.new(input, 0)
 
     assert_raise ArgumentError, ~r/:keep_axes must be a boolean/, fn ->
-      BinClass.Model.Masking.masked_global_avg(input, masking, keep_axes: :yes)
+      Masking.masked_global_avg(input, masking, keep_axes: :yes)
     end
   end
 
   test "kernel-one convolution masking preserves the exact token mask" do
     input = Axon.input("input")
 
-    %BinClass.Model.Masking{token_mask: output} =
+    %Masking{token_mask: output} =
       input
-      |> BinClass.Model.Masking.new(3)
-      |> BinClass.Model.Masking.valid_convolution(1)
+      |> Masking.new(3)
+      |> Masking.valid_convolution(1)
 
     {init_fn, predict_fn} = Axon.build(output)
     token_ids = Nx.tensor([[1, 3, 0, 3]], type: :u16)

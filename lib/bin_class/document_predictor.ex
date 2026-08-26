@@ -1,8 +1,8 @@
 defmodule BinClass.DocumentPredictor do
   @moduledoc false
 
-  alias Chunx.Chunker.Token
   alias BinClass.Options
+  alias Chunx.Chunker.Token
 
   def compile(%BinClass.Classifier{} = classifier, opts) do
     opts =

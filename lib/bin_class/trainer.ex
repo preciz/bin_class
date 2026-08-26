@@ -1,5 +1,12 @@
 defmodule BinClass.Trainer do
-  alias BinClass.{DecisionPolicy, Labels, Model, Options, Vectorizer, Tokenizer}
+  @moduledoc """
+  Trains binary text classifiers and returns complete `BinClass.Classifier` values.
+
+  Training includes tokenizer construction, stratified train/validation partitioning,
+  optional class balancing, checkpoint selection, and decision-policy calibration.
+  """
+
+  alias BinClass.{DecisionPolicy, Labels, Model, Options, Tokenizer, Vectorizer}
 
   @default_vector_length 512
   @architecture :cnn
@@ -647,26 +654,26 @@ defmodule BinClass.Trainer do
   end
 
   defp validate_targets!(data, target_mode) do
-    Enum.each(data, fn row ->
-      label = Map.fetch!(row, :label)
-
-      valid? =
-        case target_mode do
-          :hard -> is_number(label) and (label == 0 or label == 1)
-          :soft -> is_number(label) and label >= 0 and label <= 1
-        end
-
-      unless valid? do
-        expected =
-          if target_mode == :soft,
-            do: "a number between 0 and 1",
-            else: "0 or 1"
-
-        raise ArgumentError,
-              "invalid #{target_mode} target #{inspect(label)}; expected #{expected}"
-      end
-    end)
+    Enum.each(data, &validate_target!(&1, target_mode))
   end
+
+  defp validate_target!(row, target_mode) do
+    label = Map.fetch!(row, :label)
+
+    unless valid_target?(label, target_mode) do
+      raise ArgumentError,
+            "invalid #{target_mode} target #{inspect(label)}; " <>
+              "expected #{target_expectation(target_mode)}"
+    end
+  end
+
+  defp valid_target?(label, :hard), do: is_number(label) and (label == 0 or label == 1)
+
+  defp valid_target?(label, :soft),
+    do: is_number(label) and label >= 0 and label <= 1
+
+  defp target_expectation(:hard), do: "0 or 1"
+  defp target_expectation(:soft), do: "a number between 0 and 1"
 
   defp validate_seed!(nil), do: :ok
   defp validate_seed!(seed) when is_integer(seed), do: :ok

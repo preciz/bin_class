@@ -2,7 +2,7 @@ defmodule BinClass.Model.Transformer do
   @moduledoc """
   A custom Transformer Encoder architecture.
   """
-  alias BinClass.Model.Config
+  alias BinClass.Model.{Config, Masking}
 
   def build(vocab_size, opts \\ []) do
     opts = Config.validate_options!(vocab_size, opts, ff_dim: 128)
@@ -13,7 +13,7 @@ defmodule BinClass.Model.Transformer do
     pad_token_id = Keyword.fetch!(opts, :pad_token_id)
 
     input = Axon.input("input")
-    masking = BinClass.Model.Masking.new(input, pad_token_id)
+    masking = Masking.new(input, pad_token_id)
 
     embedded_raw = Axon.embedding(input, vocab_size, embedding_size)
 
@@ -29,7 +29,7 @@ defmodule BinClass.Model.Transformer do
             |> Nx.divide(2)
             |> Nx.multiply(2)
             |> Nx.divide(emb_size)
-            |> then(fn p -> Nx.pow(10000.0, p) end)
+            |> then(fn p -> Nx.pow(10_000.0, p) end)
 
           angle = Nx.divide(pos, div_t)
 
@@ -44,7 +44,7 @@ defmodule BinClass.Model.Transformer do
         end,
         [embedded_raw]
       )
-      |> BinClass.Model.Masking.mask_sequence(masking)
+      |> Masking.mask_sequence(masking)
       |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
 
     # Self-attention Block
@@ -65,7 +65,7 @@ defmodule BinClass.Model.Transformer do
       )
 
     masked_scores =
-      BinClass.Model.Masking.mask_attention_scores(attention_scores, masking)
+      Masking.mask_attention_scores(attention_scores, masking)
 
     attn_output =
       Axon.layer(
@@ -98,8 +98,8 @@ defmodule BinClass.Model.Transformer do
     pooled =
       Axon.concatenate(
         [
-          BinClass.Model.Masking.masked_global_max(x, masking),
-          BinClass.Model.Masking.masked_global_avg(x, masking)
+          Masking.masked_global_max(x, masking),
+          Masking.masked_global_avg(x, masking)
         ],
         axis: -1
       )

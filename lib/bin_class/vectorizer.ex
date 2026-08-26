@@ -1,5 +1,9 @@
 defmodule BinClass.Vectorizer do
-  alias Tokenizers.{Tokenizer, Encoding}
+  @moduledoc """
+  Encodes text into fixed-length token ID vectors with explicit padding semantics.
+  """
+
+  alias Tokenizers.{Encoding, Tokenizer}
 
   def build(tokenizer, string, vector_length, pad_token_id)
       when is_binary(string) and is_integer(pad_token_id) and pad_token_id >= 0 do

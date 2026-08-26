@@ -1,6 +1,10 @@
 defmodule BinClass.Tokenizer do
+  @moduledoc """
+  Trains tokenizers and manages the metadata required by classifier artifacts.
+  """
+
   alias BinClass.Options
-  alias Tokenizers.{Tokenizer, Trainer, PreTokenizer, Model}
+  alias Tokenizers.{Model, PreTokenizer, Tokenizer, Trainer}
 
   @default_vocab_size 30_000
   @pad_token "[PAD]"

@@ -190,28 +190,32 @@ defmodule BinClass.Evaluation do
     |> Enum.map(fn row ->
       label = row |> fetch_value!(Keyword.fetch!(opts, :label), :label) |> normalize_label!()
 
-      target =
-        case Keyword.fetch!(opts, :target) do
-          nil -> if(label, do: 1.0, else: 0.0)
-          accessor -> row |> fetch_value!(accessor, :target) |> validate_unit_value!(:target)
-        end
-
-      eligible? =
-        case Keyword.fetch!(opts, :eligible) do
-          nil -> true
-          accessor -> row |> fetch_value!(accessor, :eligible) |> validate_eligible!()
-        end
-
       %{
         probability:
           row
           |> fetch_value!(Keyword.fetch!(opts, :probability), :probability)
           |> validate_unit_value!(:probability),
         positive?: label,
-        target: target,
-        eligible?: eligible?
+        target: normalize_target(row, label, Keyword.fetch!(opts, :target)),
+        eligible?: normalize_eligibility(row, Keyword.fetch!(opts, :eligible))
       }
     end)
+  end
+
+  defp normalize_target(_row, label, nil), do: if(label, do: 1.0, else: 0.0)
+
+  defp normalize_target(row, _label, accessor) do
+    row
+    |> fetch_value!(accessor, :target)
+    |> validate_unit_value!(:target)
+  end
+
+  defp normalize_eligibility(_row, nil), do: true
+
+  defp normalize_eligibility(row, accessor) do
+    row
+    |> fetch_value!(accessor, :eligible)
+    |> validate_eligible!()
   end
 
   defp eligible_rows!(rows) do

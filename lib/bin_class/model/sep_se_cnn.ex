@@ -1,6 +1,6 @@
 defmodule BinClass.Model.SepSeCnn do
   @moduledoc false
-  alias BinClass.Model.Config
+  alias BinClass.Model.{Config, Masking}
 
   def build(vocab_size, opts \\ []) do
     opts = Config.validate_options!(vocab_size, opts, branch_filters: 48)
@@ -11,12 +11,12 @@ defmodule BinClass.Model.SepSeCnn do
     pad_token_id = Keyword.fetch!(opts, :pad_token_id)
 
     input = Axon.input("input")
-    masking = BinClass.Model.Masking.new(input, pad_token_id)
+    masking = Masking.new(input, pad_token_id)
 
     embedded =
       input
       |> Axon.embedding(vocab_size, embedding_size)
-      |> BinClass.Model.Masking.mask_sequence(masking)
+      |> Masking.mask_sequence(masking)
       |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
 
     # Branches for 3, 4, 5-grams
@@ -64,7 +64,7 @@ defmodule BinClass.Model.SepSeCnn do
     # keep_axes: true ensures we get [Batch, 1, Channels] for broadcasting
     se_weights =
       x
-      |> BinClass.Model.Masking.masked_global_avg(masking, keep_axes: true)
+      |> Masking.masked_global_avg(masking, keep_axes: true)
       |> Axon.dense(squeeze_channels, activation: :relu)
       |> Axon.dense(channels, activation: :sigmoid)
 
@@ -76,8 +76,8 @@ defmodule BinClass.Model.SepSeCnn do
     # Concatenate Global Max and Global Avg pooling
     Axon.concatenate(
       [
-        BinClass.Model.Masking.masked_global_max(x, masking),
-        BinClass.Model.Masking.masked_global_avg(x, masking)
+        Masking.masked_global_max(x, masking),
+        Masking.masked_global_avg(x, masking)
       ],
       axis: -1
     )

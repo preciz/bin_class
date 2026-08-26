@@ -14,6 +14,15 @@ defmodule BinClass.Model do
   4. Update `@architecture` in `BinClass.Trainer` to `:new_arch` if it should become the default.
   """
 
+  alias BinClass.Model.{
+    Cnn,
+    CnnMixedPooling,
+    MultiScaleCnn,
+    ParallelCnn,
+    SepSeCnn,
+    Transformer
+  }
+
   @architectures [
     :cnn,
     :cnn_mixed_pooling,
@@ -89,27 +98,27 @@ defmodule BinClass.Model do
   def build(architecture, vocab_size, opts \\ [])
 
   def build(:cnn, vocab_size, opts) do
-    BinClass.Model.Cnn.build(vocab_size, opts)
+    Cnn.build(vocab_size, opts)
   end
 
   def build(:cnn_mixed_pooling, vocab_size, opts) do
-    BinClass.Model.CnnMixedPooling.build(vocab_size, opts)
+    CnnMixedPooling.build(vocab_size, opts)
   end
 
   def build(:multi_scale_cnn, vocab_size, opts) do
-    BinClass.Model.MultiScaleCnn.build(vocab_size, opts)
+    MultiScaleCnn.build(vocab_size, opts)
   end
 
   def build(:sep_se_cnn, vocab_size, opts) do
-    BinClass.Model.SepSeCnn.build(vocab_size, opts)
+    SepSeCnn.build(vocab_size, opts)
   end
 
   def build(:parallel_cnn, vocab_size, opts) do
-    BinClass.Model.ParallelCnn.build(vocab_size, opts)
+    ParallelCnn.build(vocab_size, opts)
   end
 
   def build(:transformer, vocab_size, opts) do
-    BinClass.Model.Transformer.build(vocab_size, opts)
+    Transformer.build(vocab_size, opts)
   end
 
   def build(architecture, _vocab_size, _opts) do

@@ -1,7 +1,7 @@
 defmodule BinClass.Serving do
   @moduledoc false
 
-  alias BinClass.{DecisionPolicy, Labels, Model, Options, Vectorizer, Tokenizer}
+  alias BinClass.{DecisionPolicy, Labels, Model, Options, Tokenizer, Vectorizer}
 
   @doc false
   def new(model_params, tokenizer, opts \\ []) do
