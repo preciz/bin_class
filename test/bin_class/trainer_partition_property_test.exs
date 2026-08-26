@@ -2,7 +2,7 @@ defmodule BinClass.TrainerPartitionPropertyTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias BinClass.Trainer
+  alias BinClass.Training.{Config, Dataset}
 
   property "seeded stratified partitions and balancing preserve their invariants" do
     check all(partition_case <- partition_case(), max_runs: 250) do
@@ -19,27 +19,18 @@ defmodule BinClass.TrainerPartitionPropertyTest do
           %{id: id, text: "row #{id}", label: if(id <= positive_count, do: 1, else: 0)}
         end
 
-      {training, validation} =
-        Trainer.split_and_balance_data(
-          data,
-          batch_size,
-          validation_split,
-          false,
-          :hard,
-          0.5,
-          seed
+      config =
+        Config.new!(
+          batch_size: batch_size,
+          validation_split: validation_split,
+          balance: false,
+          vector_length: 8,
+          seed: seed
         )
 
-      assert {training, validation} ==
-               Trainer.split_and_balance_data(
-                 data,
-                 batch_size,
-                 validation_split,
-                 false,
-                 :hard,
-                 0.5,
-                 seed
-               )
+      {training, validation} = Dataset.split_and_balance(data, config)
+
+      assert {training, validation} == Dataset.split_and_balance(data, config)
 
       {expected_training_count, expected_validation_count} =
         partition_counts(data_size, batch_size, validation_split)
@@ -66,15 +57,7 @@ defmodule BinClass.TrainerPartitionPropertyTest do
       end
 
       {balanced_training, balanced_validation} =
-        Trainer.split_and_balance_data(
-          data,
-          batch_size,
-          validation_split,
-          true,
-          :hard,
-          0.5,
-          seed
-        )
+        Dataset.split_and_balance(data, %{config | balance: true})
 
       assert balanced_validation == validation
       assert MapSet.disjoint?(MapSet.new(balanced_training, & &1.id), validation_ids)
@@ -90,15 +73,7 @@ defmodule BinClass.TrainerPartitionPropertyTest do
         end)
 
       {soft_training, soft_validation} =
-        Trainer.split_and_balance_data(
-          soft_data,
-          batch_size,
-          validation_split,
-          false,
-          :soft,
-          0.5,
-          seed
-        )
+        Dataset.split_and_balance(soft_data, %{config | target_mode: :soft})
 
       assert Enum.map(soft_training, & &1.id) == Enum.map(training, & &1.id)
       assert Enum.map(soft_validation, & &1.id) == Enum.map(validation, & &1.id)

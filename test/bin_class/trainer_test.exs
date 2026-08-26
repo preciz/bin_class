@@ -1,6 +1,7 @@
 defmodule BinClass.TrainerTest do
   use ExUnit.Case
   alias BinClass.Trainer
+  alias BinClass.Training.{Config, Dataset}
 
   test "splits before balancing and never copies training examples into validation" do
     data = [
@@ -17,7 +18,12 @@ defmodule BinClass.TrainerTest do
     ]
 
     {training, validation} =
-      Trainer.split_and_balance_data(data, 1, 0.2, true, :hard, 0.5, 1234)
+      split_and_balance(data,
+        batch_size: 1,
+        validation_split: 0.2,
+        balance: true,
+        seed: 1234
+      )
 
     assert length(training) == 14
     assert Enum.count(training, &(&1.label == 1)) == 7
@@ -35,14 +41,25 @@ defmodule BinClass.TrainerTest do
       end
 
     {_training, validation} =
-      Trainer.split_and_balance_data(hard_data, 2, 0.1, false, :hard, 0.5, 1234)
+      split_and_balance(hard_data,
+        batch_size: 2,
+        validation_split: 0.1,
+        balance: false,
+        seed: 1234
+      )
 
     assert Enum.sort(Enum.map(validation, & &1.label)) == [0, 1]
 
     soft_data = Enum.map(hard_data, &%{&1 | label: if(&1.label == 1, do: 0.8, else: 0.2)})
 
     {_training, validation} =
-      Trainer.split_and_balance_data(soft_data, 2, 0.1, false, :soft, 0.5, 1234)
+      split_and_balance(soft_data,
+        batch_size: 2,
+        validation_split: 0.1,
+        balance: false,
+        target_mode: :soft,
+        seed: 1234
+      )
 
     assert Enum.sort(Enum.map(validation, & &1.label)) == [0.2, 0.8]
   end
@@ -393,12 +410,23 @@ defmodule BinClass.TrainerTest do
         %{id: id, text: "row #{id}", label: rem(id, 2)}
       end
 
-    args = [data, 2, 0.2, true, :hard, 0.5, 1234]
+    config =
+      Config.new!(
+        batch_size: 2,
+        validation_split: 0.2,
+        balance: true,
+        vector_length: 8,
+        seed: 1234
+      )
 
-    assert apply(Trainer, :split_and_balance_data, args) ==
-             apply(Trainer, :split_and_balance_data, args)
+    assert Dataset.split_and_balance(data, config) == Dataset.split_and_balance(data, config)
 
-    refute apply(Trainer, :split_and_balance_data, args) ==
-             Trainer.split_and_balance_data(data, 2, 0.2, true, :hard, 0.5, 5678)
+    refute Dataset.split_and_balance(data, config) ==
+             Dataset.split_and_balance(data, %{config | seed: 5678})
+  end
+
+  defp split_and_balance(data, opts) do
+    config = opts |> Keyword.put_new(:vector_length, 8) |> Config.new!()
+    Dataset.split_and_balance(data, config)
   end
 end
