@@ -2,7 +2,7 @@ defmodule BinClass.Model.MultiScaleCnn do
   @moduledoc false
   alias BinClass.Model.{Config, Masking}
 
-  def build(vocab_size, opts \\ []) do
+  def build(vocab_size, opts) do
     opts = Config.validate_options!(vocab_size, opts, branch_filters: 32)
 
     embedding_size = Keyword.fetch!(opts, :embedding_size)

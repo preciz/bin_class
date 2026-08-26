@@ -5,6 +5,7 @@ defmodule BinClass.ClassifierTest do
   test "inspect protocol" do
     classifier = %Classifier{
       architecture: :cnn,
+      model_revision: BinClass.Model.revision(),
       labels: ["a", "b"],
       vector_length: 128,
       vocab_size: 1000,
@@ -12,8 +13,12 @@ defmodule BinClass.ClassifierTest do
       unk_token_id: 0,
       accuracy: 0.95,
       epoch: 5,
+      learning_rate: 1.0e-3,
+      dropout_rate: 0.2,
       decision_policy: %{strategy: :argmax},
-      minimum_input_tokens: 12
+      minimum_input_tokens: 12,
+      target_mode: :hard,
+      target_threshold: 0.5
     }
 
     inspected = inspect(classifier)

@@ -88,6 +88,24 @@ defmodule BinClassTest do
     end
   end
 
+  test "deserialization clearly rejects an invalid container or tokenizer" do
+    assert_raise ArgumentError, ~r/Serialized classifier must contain a map/, fn ->
+      BinClass.deserialize_classifier(:erlang.term_to_binary(:not_a_classifier))
+    end
+
+    assert_raise ArgumentError, ~r/:tokenizer_json must be a binary/, fn ->
+      %{architecture: :cnn, model_revision: BinClass.Model.revision(), tokenizer_json: nil}
+      |> :erlang.term_to_binary()
+      |> BinClass.deserialize_classifier()
+    end
+
+    assert_raise ArgumentError, ~r/invalid tokenizer JSON/, fn ->
+      %{architecture: :cnn, model_revision: BinClass.Model.revision(), tokenizer_json: "{"}
+      |> :erlang.term_to_binary()
+      |> BinClass.deserialize_classifier()
+    end
+  end
+
   test "serialization and deserialization require binary output labels" do
     tokenizer = BinClass.Tokenizer.train(["hello world"])
     metadata = BinClass.Tokenizer.metadata(tokenizer)
@@ -101,6 +119,10 @@ defmodule BinClassTest do
       unk_token_id: metadata.unk_token_id,
       labels: ["negative", "positive"],
       architecture: :cnn,
+      model_revision: BinClass.Model.revision(),
+      accuracy: 0.9,
+      epoch: 1,
+      learning_rate: 1.0e-3,
       dropout_rate: 0.2,
       decision_policy: %{strategy: :argmax},
       minimum_input_tokens: 0,
@@ -164,6 +186,10 @@ defmodule BinClassTest do
       unk_token_id: metadata.unk_token_id,
       labels: ["0", "1"],
       architecture: :cnn,
+      model_revision: BinClass.Model.revision(),
+      accuracy: 0.9,
+      epoch: 1,
+      learning_rate: 1.0e-3,
       dropout_rate: 0.2,
       decision_policy: %{strategy: :argmax},
       minimum_input_tokens: 0,
@@ -189,6 +215,9 @@ defmodule BinClassTest do
 
     for {field, message} <- [
           {:dropout_rate, ~r/Classifier :dropout_rate/},
+          {:accuracy, ~r/Classifier :accuracy/},
+          {:epoch, ~r/Classifier :epoch/},
+          {:learning_rate, ~r/Classifier :learning_rate/},
           {:target_mode, ~r/Classifier :target_mode/},
           {:target_threshold, ~r/Classifier :target_threshold/}
         ] do
@@ -220,12 +249,20 @@ defmodule BinClassTest do
       unk_token_id: metadata.unk_token_id,
       labels: ["0", "1"],
       architecture: :cnn,
+      model_revision: BinClass.Model.revision(),
+      accuracy: 0.9,
+      epoch: 1,
+      learning_rate: 1.0e-3,
       dropout_rate: 0.2,
       decision_policy: %{strategy: :argmax},
       minimum_input_tokens: 0,
       target_mode: :hard,
       target_threshold: 0.5
     }
+
+    assert_raise ArgumentError, ~r/model revision nil is incompatible/, fn ->
+      BinClass.serialize(%{classifier | model_revision: nil})
+    end
 
     serialized = classifier |> BinClass.serialize() |> :erlang.binary_to_term()
 
@@ -257,6 +294,10 @@ defmodule BinClassTest do
       unk_token_id: metadata.unk_token_id,
       labels: ["0", "1"],
       architecture: :cnn,
+      model_revision: BinClass.Model.revision(),
+      accuracy: 0.9,
+      epoch: 1,
+      learning_rate: 1.0e-3,
       dropout_rate: 0.2,
       decision_policy: %{strategy: :argmax},
       minimum_input_tokens: 0,
@@ -266,6 +307,17 @@ defmodule BinClassTest do
 
     assert_raise ArgumentError, ~r/stored tokenizer metadata vocab_size.*tokenizer JSON/, fn ->
       BinClass.serialize(%{classifier | vocab_size: classifier.vocab_size + 1})
+    end
+
+    inconsistent_classifier = %{classifier | pad_token_id: classifier.pad_token_id + 1}
+
+    for operation <- [
+          fn -> BinClass.serving(inconsistent_classifier) end,
+          fn -> BinClass.compile_predictor(inconsistent_classifier) end
+        ] do
+      assert_raise ArgumentError,
+                   ~r/stored tokenizer metadata pad_token_id.*tokenizer JSON/,
+                   operation
     end
 
     tampered_binary =
@@ -367,6 +419,12 @@ defmodule BinClassTest do
     assert length(results) == length(texts)
     assert Enum.all?(results, &match?(%{label: _, confidence: _, probabilities: _}, &1))
     assert results == Enum.map(texts, &predictor.(&1))
+
+    for invalid_input <- [[], ["valid", 1], :invalid] do
+      assert_raise ArgumentError, ~r/string or non-empty list of strings/, fn ->
+        predictor.(invalid_input)
+      end
+    end
 
     threshold_classifier = %{
       classifier

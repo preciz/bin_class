@@ -1,8 +1,8 @@
 defmodule BinClass.Training.Dataset do
   @moduledoc false
 
-  alias BinClass.{Tokenizer, Vectorizer}
   alias BinClass.Training.Config
+  alias BinClass.Vectorizer
 
   @doc false
   def prepare!(data_stream, %Config{} = config) do
@@ -17,11 +17,6 @@ defmodule BinClass.Training.Dataset do
     validate_threshold_optimization_partitions!(data, config)
 
     data
-  end
-
-  @doc false
-  def train_tokenizer(data) do
-    Tokenizer.train(Stream.map(data, & &1.text))
   end
 
   @doc false

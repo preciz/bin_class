@@ -23,9 +23,6 @@ defmodule BinClass.ModelTest do
       Model.build(:cnn, vocab_size, embedding_size: 32, conv_filters: 64, dropout_rate: 0.1)
 
     assert %Axon{} = model_opts
-
-    # Direct call
-    assert %Axon{} = Cnn.build(vocab_size)
   end
 
   test "builds cnn_mixed_pooling model" do
@@ -42,9 +39,6 @@ defmodule BinClass.ModelTest do
       )
 
     assert %Axon{} = model_opts
-
-    # Direct call
-    assert %Axon{} = CnnMixedPooling.build(vocab_size)
   end
 
   test "builds multi_scale_cnn model" do
@@ -61,9 +55,6 @@ defmodule BinClass.ModelTest do
       )
 
     assert %Axon{} = model_opts
-
-    # Direct call
-    assert %Axon{} = MultiScaleCnn.build(vocab_size)
   end
 
   test "builds sep_se_cnn model" do
@@ -80,9 +71,6 @@ defmodule BinClass.ModelTest do
       )
 
     assert %Axon{} = model_opts
-
-    # Direct call
-    assert %Axon{} = SepSeCnn.build(vocab_size)
   end
 
   test "builds parallel_cnn model" do
@@ -95,9 +83,6 @@ defmodule BinClass.ModelTest do
       Model.build(:parallel_cnn, vocab_size, embedding_size: 32, dropout_rate: 0.1)
 
     assert %Axon{} = model_opts
-
-    # Direct call
-    assert %Axon{} = ParallelCnn.build(vocab_size)
   end
 
   test "builds transformer model" do
@@ -110,9 +95,6 @@ defmodule BinClass.ModelTest do
       Model.build(:transformer, vocab_size, embedding_size: 32, dropout_rate: 0.1)
 
     assert %Axon{} = model_opts
-
-    # Direct call
-    assert %Axon{} = Transformer.build(vocab_size)
   end
 
   test "transformer model execution does not impose an input-length decision" do

@@ -6,7 +6,7 @@ defmodule BinClass.Model.Config do
   @common_defaults [embedding_size: 64, dropout_rate: 0.2, pad_token_id: 0, seed: nil]
 
   @doc false
-  def validate_options!(vocab_size, opts, architecture_defaults \\ []) do
+  def validate_options!(vocab_size, opts, architecture_defaults) do
     Options.validate_positive_integer!(vocab_size, :vocab_size)
 
     opts = Keyword.validate!(opts, Keyword.merge(@common_defaults, architecture_defaults))

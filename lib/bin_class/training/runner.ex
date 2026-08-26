@@ -13,11 +13,10 @@ defmodule BinClass.Training.Runner do
     :pad_token_id
   ]
 
-  defstruct @enforce_keys ++ [init_state: nil]
+  defstruct @enforce_keys
 
   @doc false
   def run(%__MODULE__{config: %Config{} = config} = runner) do
-    init_state = runner.init_state || Axon.ModelState.empty()
     loop_options = [epochs: config.epochs, compiler: config.compiler]
 
     Tmp.with_tmp_dir(fn dir ->
@@ -31,7 +30,7 @@ defmodule BinClass.Training.Runner do
         path: checkpoints_dir,
         file_pattern: &"#{&1.epoch}.ckpt"
       )
-      |> Axon.Loop.run(runner.training_data, init_state, loop_options)
+      |> Axon.Loop.run(runner.training_data, Axon.ModelState.empty(), loop_options)
 
       model = runner.build_model_fn.()
       {_, predict_fn} = Axon.build(model, compiler: config.compiler)

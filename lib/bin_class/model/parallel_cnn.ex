@@ -2,8 +2,8 @@ defmodule BinClass.Model.ParallelCnn do
   @moduledoc false
   alias BinClass.Model.{Config, Masking}
 
-  def build(vocab_size, opts \\ []) do
-    opts = Config.validate_options!(vocab_size, opts)
+  def build(vocab_size, opts) do
+    opts = Config.validate_options!(vocab_size, opts, [])
 
     embedding_size = Keyword.fetch!(opts, :embedding_size)
     dropout_rate = Keyword.fetch!(opts, :dropout_rate)

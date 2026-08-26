@@ -1,10 +1,10 @@
 defmodule BinClass.Serving do
   @moduledoc false
 
-  alias BinClass.{DecisionPolicy, Labels, Model, Options, Tokenizer, Vectorizer}
+  alias BinClass.{DecisionPolicy, Model, Tokenizer, Vectorizer}
 
   @doc false
-  def new(model_params, tokenizer, opts \\ []) do
+  def new(model_params, tokenizer, opts) do
     opts =
       Keyword.validate!(opts, [
         :vector_length,
@@ -18,35 +18,19 @@ defmodule BinClass.Serving do
         :minimum_input_tokens
       ])
 
-    vector_length = Keyword.get(opts, :vector_length, 512)
-    architecture = Keyword.get(opts, :architecture, :cnn)
-    Model.validate_vector_length!(architecture, vector_length)
-
-    batch_size =
-      opts |> Keyword.get(:batch_size, 16) |> Options.validate_positive_integer!(:batch_size)
-
-    compiler = opts |> Keyword.get(:compiler, EXLA) |> Options.validate_compiler!()
-
-    defn_options =
-      opts
-      |> Keyword.get(:defn_options, [])
-      |> Options.validate_keyword_list!(:defn_options)
-
-    dropout_rate =
-      opts |> Keyword.get(:dropout_rate, 0.2) |> Options.validate_dropout_rate!()
+    vector_length = Keyword.fetch!(opts, :vector_length)
+    architecture = Keyword.fetch!(opts, :architecture)
+    batch_size = Keyword.fetch!(opts, :batch_size)
+    compiler = Keyword.fetch!(opts, :compiler)
+    defn_options = Keyword.fetch!(opts, :defn_options)
+    dropout_rate = Keyword.fetch!(opts, :dropout_rate)
 
     tokenizer_metadata = Tokenizer.metadata(tokenizer)
     vocab_size = tokenizer_metadata.vocab_size
     pad_token_id = tokenizer_metadata.pad_token_id
-    labels = opts |> Keyword.get(:labels, Labels.default()) |> Labels.validate!()
-
-    policy =
-      opts |> Keyword.get(:decision_policy, %{strategy: :argmax}) |> DecisionPolicy.validate!()
-
-    minimum_input_tokens =
-      opts
-      |> Keyword.get(:minimum_input_tokens, 0)
-      |> DecisionPolicy.validate_minimum_input_tokens!(vector_length)
+    labels = Keyword.fetch!(opts, :labels)
+    policy = Keyword.fetch!(opts, :decision_policy)
+    minimum_input_tokens = Keyword.fetch!(opts, :minimum_input_tokens)
 
     model =
       Model.build(architecture, vocab_size,
@@ -106,8 +90,17 @@ defmodule BinClass.Serving do
   end
 
   @doc false
-  def validate_input(input) when is_list(input), do: {input, true}
-  def validate_input(input), do: {[input], false}
+  def validate_input(input) when is_binary(input), do: {[input], false}
+
+  def validate_input([_text | _texts] = input) do
+    if Enum.all?(input, &is_binary/1) do
+      {input, true}
+    else
+      invalid_input!(input)
+    end
+  end
+
+  def validate_input(input), do: invalid_input!(input)
 
   @doc false
   def decode_prediction(probs, labels, policy, active_token_count, minimum_input_tokens) do
@@ -148,4 +141,10 @@ defmodule BinClass.Serving do
   end
 
   defp build_probabilities(probs, labels), do: Enum.zip(labels, probs) |> Map.new()
+
+  defp invalid_input!(input) do
+    raise ArgumentError,
+          "prediction input must be a string or non-empty list of strings, got: " <>
+            inspect(input)
+  end
 end

@@ -1,10 +1,8 @@
 defmodule BinClass.Model.Transformer do
-  @moduledoc """
-  A custom Transformer Encoder architecture.
-  """
+  @moduledoc false
   alias BinClass.Model.{Config, Masking}
 
-  def build(vocab_size, opts \\ []) do
+  def build(vocab_size, opts) do
     opts = Config.validate_options!(vocab_size, opts, ff_dim: 128)
 
     embedding_size = Keyword.fetch!(opts, :embedding_size)

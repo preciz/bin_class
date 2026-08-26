@@ -1,7 +1,7 @@
 defmodule BinClass.Predictor do
   @moduledoc false
 
-  alias BinClass.{DecisionPolicy, Labels, Model, Options, Serving, Vectorizer}
+  alias BinClass.{Classifier, Model, Options, Serving, Vectorizer}
 
   @doc false
   def compile(%BinClass.Classifier{} = classifier, opts) do
@@ -12,6 +12,8 @@ defmodule BinClass.Predictor do
       opts
       |> Keyword.fetch!(:batch_size)
       |> Options.validate_positive_integer!(:batch_size)
+
+    classifier = Classifier.validate!(classifier)
 
     %{
       architecture: architecture,
@@ -25,17 +27,9 @@ defmodule BinClass.Predictor do
       minimum_input_tokens: minimum_input_tokens
     } = classifier
 
-    DecisionPolicy.validate!(decision_policy)
-    Labels.validate!(labels)
-    Model.validate_revision!(classifier.model_revision)
-    Model.validate_vector_length!(architecture, vector_length)
-    DecisionPolicy.validate_minimum_input_tokens!(minimum_input_tokens, vector_length)
-
-    dropout_rate = validate_dropout_rate!(classifier.dropout_rate)
-
     model =
       Model.build(architecture, vocab_size,
-        dropout_rate: dropout_rate,
+        dropout_rate: classifier.dropout_rate,
         pad_token_id: pad_token_id
       )
 
@@ -90,15 +84,5 @@ defmodule BinClass.Predictor do
 
       if multi?, do: results, else: List.first(results)
     end
-  end
-
-  defp validate_dropout_rate!(dropout_rate)
-       when is_number(dropout_rate) and dropout_rate >= 0 and dropout_rate < 1,
-       do: dropout_rate
-
-  defp validate_dropout_rate!(dropout_rate) do
-    raise ArgumentError,
-          "Classifier :dropout_rate must be a number greater than or equal to 0 and below 1, " <>
-            "got: #{inspect(dropout_rate)}"
   end
 end

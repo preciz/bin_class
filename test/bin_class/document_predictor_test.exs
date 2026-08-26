@@ -28,9 +28,15 @@ defmodule BinClass.DocumentPredictorTest do
       unk_token_id: metadata.unk_token_id,
       labels: %{0 => "negative", 1 => "positive"},
       architecture: :cnn,
+      model_revision: BinClass.Model.revision(),
+      accuracy: 0.9,
+      epoch: 1,
+      learning_rate: 1.0e-3,
       dropout_rate: 0.2,
       decision_policy: %{strategy: :argmax},
-      minimum_input_tokens: 0
+      minimum_input_tokens: 0,
+      target_mode: :hard,
+      target_threshold: 0.5
     }
 
     %{classifier: classifier}

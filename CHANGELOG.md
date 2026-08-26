@@ -32,6 +32,10 @@ All notable changes to this project are documented in this file.
   internal modules, removing runtime dependency cycles.
 - Public APIs now validate known option values before training, loading, model
   construction, or serving work begins.
+- Serialization and every inference path now share one complete classifier
+  validation contract, including training metadata and tokenizer metadata.
+- Serving and compiled prediction now accept only a string or a non-empty list
+  of strings and report invalid input with the same error.
 - Argmax is now the default decision policy for every architecture, and `:cnn`
   is the default architecture.
 - Decision policies and input validation no longer derive from model
@@ -106,7 +110,9 @@ All notable changes to this project are documented in this file.
   serving now always derives vocabulary size and special-token IDs from the tokenizer.
 - Replaced the low-level public serving constructor with `BinClass.serving/2`,
   which accepts a complete classifier and only runtime serving options. The
-  implementation module is now internal.
+  implementation module is now internal and has no classifier-option defaults.
+- Removed the implicit current model revision from manually constructed
+  classifier structs. A revision must now be present explicitly.
 - Removed numeric model architecture identifiers. Training, serving, serialization,
   and deserialization now require named architectures such as `:cnn`.
 - Removed all fallback handling for the previous model-version schema.

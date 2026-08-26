@@ -5,13 +5,14 @@ defmodule BinClass.Model do
   ## Adding a new architecture
 
   1. Create a new module e.g. `BinClass.Model.NewArch` in `lib/bin_class/model/new_arch.ex`.
-  2. Implement `build/2` in that module, using `BinClass.Model.Config` for shared
-     option validation and seeded dropout configuration.
+  2. Implement `build/2` in that module, using the shared internal model
+     configuration helpers for option validation and seeded dropout.
   3. Add a new clause to `BinClass.Model.build/3`:
      ```elixir
      def build(:new_arch, vocab_size, opts), do: BinClass.Model.NewArch.build(vocab_size, opts)
      ```
-  4. Update `@architecture` in `BinClass.Trainer` to `:new_arch` if it should become the default.
+  4. Update the training configuration's default architecture if it should
+     become the default.
   """
 
   alias BinClass.Model.{

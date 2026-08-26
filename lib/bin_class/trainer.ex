@@ -50,7 +50,7 @@ defmodule BinClass.Trainer do
     config = Config.new!(opts)
     data = Dataset.prepare!(data_stream, config)
 
-    tokenizer = Dataset.train_tokenizer(data)
+    tokenizer = Tokenizer.train(Stream.map(data, & &1.text))
     tokenizer_metadata = Tokenizer.metadata(tokenizer)
     vocab_size = tokenizer_metadata.vocab_size
     pad_token_id = tokenizer_metadata.pad_token_id

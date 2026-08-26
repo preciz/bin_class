@@ -71,7 +71,7 @@ defmodule BinClass do
 
     path
     |> load_classifier()
-    |> serving(opts)
+    |> build_serving(opts)
   end
 
   @doc """
@@ -82,7 +82,7 @@ defmodule BinClass do
 
     binary
     |> deserialize_classifier()
-    |> serving(opts)
+    |> build_serving(opts)
   end
 
   @doc """
@@ -99,19 +99,21 @@ defmodule BinClass do
   """
   def serving(%BinClass.Classifier{} = classifier, opts \\ []) do
     opts = validate_serving_options!(opts)
-    dropout_rate = validate_dropout_rate!(classifier.dropout_rate)
+    build_serving(classifier, opts)
+  end
+
+  defp build_serving(classifier, opts) do
+    classifier = BinClass.Classifier.validate!(classifier)
 
     serving_opts =
       Keyword.merge(opts,
         vector_length: classifier.vector_length,
         labels: classifier.labels,
         architecture: classifier.architecture,
-        dropout_rate: dropout_rate,
+        dropout_rate: classifier.dropout_rate,
         decision_policy: classifier.decision_policy,
         minimum_input_tokens: classifier.minimum_input_tokens
       )
-
-    BinClass.Model.validate_revision!(classifier.model_revision)
 
     BinClass.Serving.new(classifier.model_params, classifier.tokenizer, serving_opts)
   end
@@ -142,8 +144,8 @@ defmodule BinClass do
   and batching (provided by Nx.Serving) is not necessary (e.g. CLI tools,
   single-user scripts, or very low-concurrency high-speed inference).
 
-  Returns an anonymous function that takes a text (string) or list of texts
-  and returns the classification results. Inputs below the classifier's
+  Returns an anonymous function that takes a text (string) or a non-empty list
+  of texts and returns the classification results. Inputs below the classifier's
   `minimum_input_tokens` return `label: :insufficient_input` and
   `confidence: nil`, while retaining raw class probabilities. Every result
   includes `:active_token_count`, defined consistently as the number of
@@ -201,16 +203,6 @@ defmodule BinClass do
   """
   def compile_document_predictor(%BinClass.Classifier{} = classifier, opts \\ []) do
     BinClass.DocumentPredictor.compile(classifier, opts)
-  end
-
-  defp validate_dropout_rate!(dropout_rate)
-       when is_number(dropout_rate) and dropout_rate >= 0 and dropout_rate < 1,
-       do: dropout_rate
-
-  defp validate_dropout_rate!(dropout_rate) do
-    raise ArgumentError,
-          "Classifier :dropout_rate must be a number greater than or equal to 0 and below 1, " <>
-            "got: #{inspect(dropout_rate)}"
   end
 
   defp validate_serving_options!(opts) do

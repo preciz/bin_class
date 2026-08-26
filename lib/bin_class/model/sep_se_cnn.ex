@@ -2,7 +2,7 @@ defmodule BinClass.Model.SepSeCnn do
   @moduledoc false
   alias BinClass.Model.{Config, Masking}
 
-  def build(vocab_size, opts \\ []) do
+  def build(vocab_size, opts) do
     opts = Config.validate_options!(vocab_size, opts, branch_filters: 48)
 
     embedding_size = Keyword.fetch!(opts, :embedding_size)
@@ -54,7 +54,8 @@ defmodule BinClass.Model.SepSeCnn do
     |> Axon.conv(output_channels, kernel_size: 1, activation: :relu)
   end
 
-  defp se_block(x, masking, channels, reduction \\ 8) do
+  defp se_block(x, masking, channels) do
+    reduction = 8
     # Squeeze-and-Excitation Block
     # Re-calibrates channel importance based on global context
 

@@ -16,10 +16,10 @@ defmodule BinClass.ServingTest do
     params = init_fn.(template, Axon.ModelState.empty())
 
     serving =
-      Serving.new(params, tokenizer,
-        architecture: :cnn,
-        vector_length: 16,
-        labels: ["a", "b"]
+      Serving.new(
+        params,
+        tokenizer,
+        serving_options(labels: ["a", "b"])
       )
 
     # Single prediction
@@ -30,6 +30,12 @@ defmodule BinClass.ServingTest do
     results = Nx.Serving.run(serving, ["hello", "world"])
     assert length(results) == 2
     assert match?([%{label: _, confidence: _}, %{label: _, confidence: _}], results)
+
+    for invalid_input <- [[], ["hello", 1], :hello] do
+      assert_raise ArgumentError, ~r/string or non-empty list of strings/, fn ->
+        Nx.Serving.run(serving, invalid_input)
+      end
+    end
   end
 
   test "Nx.Serving pipeline with map labels" do
@@ -48,11 +54,7 @@ defmodule BinClass.ServingTest do
     labels = %{0 => "negative", 1 => "positive"}
 
     serving =
-      Serving.new(params, tokenizer,
-        architecture: :cnn,
-        vector_length: 16,
-        labels: labels
-      )
+      Serving.new(params, tokenizer, serving_options(labels: labels))
 
     # Single prediction
     result = Nx.Serving.run(serving, "hello")
@@ -73,49 +75,24 @@ defmodule BinClass.ServingTest do
     params = init_fn.(Nx.broadcast(0, {1, 16}) |> Nx.as_type(:u16), Axon.ModelState.empty())
 
     serving =
-      Serving.new(params, tokenizer,
-        architecture: :cnn,
-        batch_size: 4,
-        compiler: EXLA,
-        defn_options: [compiler: EXLA]
+      Serving.new(
+        params,
+        tokenizer,
+        serving_options(batch_size: 4, compiler: EXLA, defn_options: [compiler: EXLA])
       )
 
     assert %Nx.Serving{} = serving
   end
 
-  test "Serving.new with no options" do
-    data = ["hello"]
-    tokenizer = BinClass.Tokenizer.train(data)
-    metadata = BinClass.Tokenizer.metadata(tokenizer)
-
-    model =
-      BinClass.Model.build(:cnn, metadata.vocab_size, pad_token_id: metadata.pad_token_id)
-
-    {init_fn, _} = Axon.build(model)
-    params = init_fn.(Nx.broadcast(0, {1, 16}) |> Nx.as_type(:u16), Axon.ModelState.empty())
-
-    serving = Serving.new(params, tokenizer)
-    assert %Nx.Serving{} = serving
+  test "Serving.new requires complete internal configuration" do
+    assert_raise KeyError, ~r/key :vector_length not found/, fn ->
+      Serving.new(nil, nil, [])
+    end
   end
 
   test "Serving.new rejects unknown options before model setup" do
     assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, fn ->
       Serving.new(nil, nil, not_an_option: true)
-    end
-  end
-
-  test "Serving.new rejects invalid option values before model setup" do
-    for {opts, message} <- [
-          {[batch_size: 0], ~r/:batch_size must be a positive integer/},
-          {[compiler: String], ~r/:compiler must be a module implementing Nx.Defn.Compiler/},
-          {[compiler: "EXLA"], ~r/:compiler must be a module implementing Nx.Defn.Compiler/},
-          {[defn_options: [:invalid]], ~r/:defn_options must be a keyword list/},
-          {[defn_options: %{}], ~r/:defn_options must be a keyword list/},
-          {[vector_length: 0], ~r/:vector_length must be a positive integer/},
-          {[architecture: :unknown], ~r/Unknown model architecture/},
-          {[dropout_rate: 1], ~r/:dropout_rate must be a number/}
-        ] do
-      assert_raise ArgumentError, message, fn -> Serving.new(nil, nil, opts) end
     end
   end
 
@@ -137,12 +114,15 @@ defmodule BinClass.ServingTest do
     params = init_fn.(template, Axon.ModelState.empty())
 
     serving =
-      Serving.new(params, tokenizer,
-        architecture: :cnn,
-        vector_length: 64,
-        labels: ["negative", "positive"],
-        decision_policy: %{strategy: :positive_threshold, positive_threshold: 0.0},
-        minimum_input_tokens: 64
+      Serving.new(
+        params,
+        tokenizer,
+        serving_options(
+          vector_length: 64,
+          labels: ["negative", "positive"],
+          decision_policy: %{strategy: :positive_threshold, positive_threshold: 0.0},
+          minimum_input_tokens: 64
+        )
       )
 
     assert %{label: "positive", active_token_count: 64} = Nx.Serving.run(serving, text)
@@ -167,5 +147,22 @@ defmodule BinClass.ServingTest do
              confidence: nil,
              probabilities: %{"negative" => 0.1, "positive" => 0.9}
            } = Serving.decode_prediction([0.1, 0.9], labels, threshold, 32, 64)
+  end
+
+  defp serving_options(overrides) do
+    Keyword.merge(
+      [
+        vector_length: 16,
+        labels: ["0", "1"],
+        batch_size: 16,
+        compiler: EXLA,
+        defn_options: [],
+        architecture: :cnn,
+        dropout_rate: 0.2,
+        decision_policy: %{strategy: :argmax},
+        minimum_input_tokens: 0
+      ],
+      overrides
+    )
   end
 end
