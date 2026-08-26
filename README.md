@@ -241,6 +241,25 @@ Check out the `examples/` directory for scripts demonstrating various use cases:
 - `production_serving.exs`: Illustrates how to integrate `BinClass` into a supervision tree for production environments.
 - `configurable_backend.exs`: Shows how to use custom compilers and definition options for training and inference.
 
+## Public API
+
+The supported API is organized around these modules:
+
+| Module | Purpose |
+|---|---|
+| `BinClass` | Save, load, serialize, and deserialize classifiers; build servings and compiled predictors. |
+| `BinClass.Trainer` | Train complete `BinClass.Classifier` artifacts from labeled text. |
+| `BinClass.Evaluation` | Evaluate fixed thresholds, calibrate a threshold, or compare probability strategies. |
+| `BinClass.Model` | List and directly build the supported Axon architectures. |
+| `BinClass.Tokenizer` | Train tokenizers and read the metadata needed for vectorization. |
+| `BinClass.Vectorizer` | Encode text into fixed-length padded token vectors. |
+| `BinClass.Classifier` | The complete trained classifier artifact consumed by persistence and inference APIs. |
+
+Modules hidden from the generated documentation are implementation details and
+may change without notice. Use the `BinClass` entry points for persistence and
+inference instead of calling serialization, serving, or predictor internals
+directly.
+
 ## Features
 
 - **Production Ready**: Built on `Nx.Serving` for automatic batching and process isolation.

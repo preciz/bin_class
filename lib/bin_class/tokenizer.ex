@@ -10,6 +10,13 @@ defmodule BinClass.Tokenizer do
   @pad_token "[PAD]"
   @unk_token "[UNK]"
 
+  @doc """
+  Returns the vocabulary size and required special-token IDs for a tokenizer.
+
+  The returned map contains `:vocab_size`, `:pad_token_id`, and
+  `:unk_token_id`. Raises `ArgumentError` when the tokenizer does not contain
+  distinct `[PAD]` and `[UNK]` tokens.
+  """
   def metadata(tokenizer) do
     vocab_size = Tokenizer.get_vocab_size(tokenizer)
     pad_token_id = required_token_id!(tokenizer, @pad_token)
@@ -27,6 +34,7 @@ defmodule BinClass.Tokenizer do
     }
   end
 
+  @doc false
   def validate_metadata!(tokenizer, expected) when is_map(expected) do
     actual = metadata(tokenizer)
 
@@ -44,6 +52,18 @@ defmodule BinClass.Tokenizer do
     actual
   end
 
+  @doc """
+  Trains a BPE tokenizer from an enumerable of strings.
+
+  ## Options
+
+    * `:vocab_size` - Positive maximum vocabulary size. It must be at least
+      `5` so all required special tokens can be included. Defaults to
+      `#{@default_vocab_size}`.
+
+  The tokenizer always includes `[UNK]`, `[CLS]`, `[SEP]`, `[PAD]`, and
+  `[MASK]` as special tokens.
+  """
   def train(data, opts \\ []) do
     opts = Keyword.validate!(opts, vocab_size: @default_vocab_size)
 
@@ -103,6 +123,7 @@ defmodule BinClass.Tokenizer do
     raise ArgumentError, "tokenizer training data must contain strings, got: #{inspect(text)}"
   end
 
+  @doc false
   def to_json(tokenizer) do
     BinClass.Tmp.with_tmp_dir(fn dir ->
       tmp_path = Path.join(dir, "tokenizer.json")

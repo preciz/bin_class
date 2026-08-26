@@ -45,6 +45,33 @@ defmodule BinClass.Classifier do
     :model_revision
   ]
 
+  @typedoc """
+  A complete, validated binary classifier artifact.
+
+  Values returned by `BinClass.Trainer.train/2` satisfy this type. Manually
+  constructed structs must provide the complete current schema before they can
+  be serialized or used for inference.
+  """
+  @type t :: %__MODULE__{
+          model_params: term(),
+          tokenizer: term(),
+          labels: [String.t()] | %{0 => String.t(), 1 => String.t()},
+          vector_length: pos_integer(),
+          vocab_size: pos_integer(),
+          pad_token_id: non_neg_integer(),
+          unk_token_id: non_neg_integer(),
+          accuracy: number(),
+          epoch: non_neg_integer(),
+          architecture: atom(),
+          learning_rate: number(),
+          dropout_rate: number(),
+          decision_policy: map(),
+          minimum_input_tokens: non_neg_integer(),
+          target_mode: :hard | :soft,
+          target_threshold: number(),
+          model_revision: non_neg_integer()
+        }
+
   @doc false
   def validate!(%__MODULE__{} = classifier) do
     Model.validate_name!(classifier.architecture)

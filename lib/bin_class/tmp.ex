@@ -1,10 +1,7 @@
 defmodule BinClass.Tmp do
   @moduledoc false
 
-  @doc """
-  Executes a function within a temporary directory.
-  The directory is created before the function is called and deleted afterwards.
-  """
+  @doc false
   def with_tmp_dir(func) do
     base = System.tmp_dir!()
     random = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)

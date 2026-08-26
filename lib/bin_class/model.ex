@@ -94,7 +94,32 @@ defmodule BinClass.Model do
   end
 
   @doc """
-  Builds a named model architecture.
+  Builds a named binary-classification model.
+
+  `architecture` must be one of the values returned by `architectures/0`, and
+  `vocab_size` must be a positive integer greater than `:pad_token_id`. The
+  returned Axon graph accepts batches of token IDs and produces two-class
+  probability distributions.
+
+  ## Common options
+
+    * `:embedding_size` - Positive embedding width. Defaults to `64`.
+    * `:dropout_rate` - Number from `0.0` up to, but excluding, `1.0`.
+      Defaults to `0.2`.
+    * `:pad_token_id` - Non-negative padding ID below `vocab_size`. Defaults to
+      `0`.
+    * `:seed` - Optional integer used to seed dropout layers. Defaults to
+      `nil`.
+
+  ## Architecture-specific options
+
+    * `:conv_filters` - Positive filter count for `:cnn` and
+      `:cnn_mixed_pooling`. Defaults to `128` and `96`, respectively.
+    * `:branch_filters` - Positive per-branch filter count for
+      `:multi_scale_cnn` and `:sep_se_cnn`. Defaults to `32` and `48`,
+      respectively.
+    * `:ff_dim` - Positive feed-forward width for `:transformer`. Defaults to
+      `128`.
   """
   def build(architecture, vocab_size, opts \\ [])
 
