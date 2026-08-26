@@ -297,6 +297,52 @@ defmodule BinClass.ModelTest do
     end
   end
 
+  test "model builders and masking reject invalid option values" do
+    for architecture <- Model.architectures() do
+      for {opts, message} <- [
+            {[embedding_size: 0], ~r/:embedding_size must be a positive integer/},
+            {[dropout_rate: -0.1], ~r/:dropout_rate must be a number/},
+            {[dropout_rate: 1], ~r/:dropout_rate must be a number/},
+            {[pad_token_id: -1], ~r/:pad_token_id must be a non-negative integer/},
+            {[pad_token_id: 100], ~r/:pad_token_id must be below :vocab_size/},
+            {[seed: :random], ~r/:seed must be an integer or nil/}
+          ] do
+        assert_raise ArgumentError, message, fn -> Model.build(architecture, 100, opts) end
+      end
+
+      assert_raise ArgumentError, ~r/:vocab_size must be a positive integer/, fn ->
+        Model.build(architecture, 0)
+      end
+    end
+
+    for {architecture, option} <- [
+          {:cnn, :conv_filters},
+          {:cnn_mixed_pooling, :conv_filters},
+          {:multi_scale_cnn, :branch_filters},
+          {:sep_se_cnn, :branch_filters},
+          {:transformer, :ff_dim}
+        ] do
+      assert_raise ArgumentError, ~r/#{option} must be a positive integer/, fn ->
+        Model.build(architecture, 100, [{option, 0}])
+      end
+    end
+
+    assert_raise ArgumentError, ~r/:embedding_size must be a positive integer/, fn ->
+      BinClass.Model.Cnn.build(100, embedding_size: 0)
+    end
+
+    assert_raise ArgumentError, ~r/:seed must be an integer or nil/, fn ->
+      Model.dropout_options(:random, 0.2, 0)
+    end
+
+    input = Axon.input("input")
+    masking = BinClass.Model.Masking.new(input, 0)
+
+    assert_raise ArgumentError, ~r/:keep_axes must be a boolean/, fn ->
+      BinClass.Model.Masking.masked_global_avg(input, masking, keep_axes: :yes)
+    end
+  end
+
   test "kernel-one convolution masking preserves the exact token mask" do
     input = Axon.input("input")
 

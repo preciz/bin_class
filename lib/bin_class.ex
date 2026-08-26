@@ -136,9 +136,9 @@ defmodule BinClass do
 
   ## Options
 
-    * `:compiler` - The Nx compiler to use. Defaults to `EXLA`.
-    * `:batch_size` - The serving batch size. Defaults to `16`.
-    * `:defn_options` - Options passed to the compiled definition. Defaults to `[]`.
+    * `:compiler` - A module implementing `Nx.Defn.Compiler`. Defaults to `EXLA`.
+    * `:batch_size` - The positive serving batch size. Defaults to `16`.
+    * `:defn_options` - A keyword list passed to the compiled definition. Defaults to `[]`.
   """
   def serving(%BinClass.Classifier{} = classifier, opts \\ []) do
     opts = validate_serving_options!(opts)
@@ -265,18 +265,18 @@ defmodule BinClass do
 
   ## Options
 
-    * `:compiler` - The compiler to use. Defaults to `EXLA`.
-    * `:batch_size` - The batch size to compile for. Inputs larger than this are processed
+    * `:compiler` - A module implementing `Nx.Defn.Compiler`. Defaults to `EXLA`.
+    * `:batch_size` - The positive batch size to compile for. Inputs larger than this are processed
       in chunks. Defaults to 1 (lowest latency).
   """
   def compile_predictor(%BinClass.Classifier{} = classifier, opts \\ []) do
     opts = Keyword.validate!(opts, compiler: EXLA, batch_size: 1)
-    compiler = Keyword.fetch!(opts, :compiler)
-    batch_size = Keyword.fetch!(opts, :batch_size)
+    compiler = opts |> Keyword.fetch!(:compiler) |> BinClass.Options.validate_compiler!()
 
-    unless is_integer(batch_size) and batch_size > 0 do
-      raise ArgumentError, ":batch_size must be a positive integer, got: #{inspect(batch_size)}"
-    end
+    batch_size =
+      opts
+      |> Keyword.fetch!(:batch_size)
+      |> BinClass.Options.validate_positive_integer!(:batch_size)
 
     %{
       architecture: architecture,
@@ -387,8 +387,8 @@ defmodule BinClass do
 
   ## Options
 
-    * `:compiler` - The Nx compiler to use. Defaults to `EXLA`.
-    * `:batch_size` - Maximum number of chunks predicted per model invocation.
+    * `:compiler` - A module implementing `Nx.Defn.Compiler`. Defaults to `EXLA`.
+    * `:batch_size` - Positive maximum number of chunks predicted per model invocation.
       Defaults to `16`.
     * `:chunk_size` - Maximum token count per chunk. Defaults to the classifier's
       vector length and cannot exceed it.
@@ -444,11 +444,21 @@ defmodule BinClass do
   end
 
   defp validate_serving_options!(opts) do
-    Keyword.validate!(opts, [
-      :compiler,
-      :batch_size,
-      :defn_options
-    ])
+    opts = Keyword.validate!(opts, compiler: EXLA, batch_size: 16, defn_options: [])
+
+    opts
+    |> Keyword.fetch!(:compiler)
+    |> BinClass.Options.validate_compiler!()
+
+    opts
+    |> Keyword.fetch!(:batch_size)
+    |> BinClass.Options.validate_positive_integer!(:batch_size)
+
+    opts
+    |> Keyword.fetch!(:defn_options)
+    |> BinClass.Options.validate_keyword_list!(:defn_options)
+
+    opts
   end
 
   defp ensure_serialization_modules_loaded! do

@@ -104,6 +104,21 @@ defmodule BinClass.ServingTest do
     end
   end
 
+  test "Serving.new rejects invalid option values before model setup" do
+    for {opts, message} <- [
+          {[batch_size: 0], ~r/:batch_size must be a positive integer/},
+          {[compiler: String], ~r/:compiler must be a module implementing Nx.Defn.Compiler/},
+          {[compiler: "EXLA"], ~r/:compiler must be a module implementing Nx.Defn.Compiler/},
+          {[defn_options: [:invalid]], ~r/:defn_options must be a keyword list/},
+          {[defn_options: %{}], ~r/:defn_options must be a keyword list/},
+          {[vector_length: 0], ~r/:vector_length must be a positive integer/},
+          {[architecture: :unknown], ~r/Unknown model architecture/},
+          {[dropout_rate: 1], ~r/:dropout_rate must be a number/}
+        ] do
+      assert_raise ArgumentError, message, fn -> Serving.new(nil, nil, opts) end
+    end
+  end
+
   test "unknown tokens count as active tokens rather than padding" do
     tokenizer = BinClass.Tokenizer.train(["known"])
     metadata = BinClass.Tokenizer.metadata(tokenizer)

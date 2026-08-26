@@ -43,6 +43,22 @@ defmodule BinClass.TokenizerTest do
     end
   end
 
+  test "rejects invalid vocabulary sizes" do
+    assert Tokenizer.train(["hello world"], vocab_size: 5)
+
+    for vocab_size <- [0, -1, :many] do
+      assert_raise ArgumentError, ~r/:vocab_size must be a positive integer/, fn ->
+        Tokenizer.train(["hello world"], vocab_size: vocab_size)
+      end
+    end
+
+    for vocab_size <- [1, 4] do
+      assert_raise ArgumentError, ~r/:vocab_size must be at least 5/, fn ->
+        Tokenizer.train(["hello world"], vocab_size: vocab_size)
+      end
+    end
+  end
+
   test "rejects invalid training rows and tokenizers missing required special tokens" do
     assert_raise ArgumentError, ~r/training data must contain strings/, fn ->
       Tokenizer.train(["valid", :invalid])

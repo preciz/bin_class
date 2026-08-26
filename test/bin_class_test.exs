@@ -27,6 +27,20 @@ defmodule BinClassTest do
     end
   end
 
+  test "public inference constructors reject invalid option values before doing work" do
+    classifier = %BinClass.Classifier{}
+
+    for operation <- [
+          fn -> BinClass.load("missing.bin", batch_size: 0) end,
+          fn -> BinClass.deserialize(<<>>, compiler: String) end,
+          fn -> BinClass.serving(classifier, defn_options: [:invalid]) end,
+          fn -> BinClass.compile_predictor(classifier, compiler: String) end,
+          fn -> BinClass.compile_document_predictor(classifier, batch_size: 0) end
+        ] do
+      assert_raise ArgumentError, operation
+    end
+  end
+
   test "serialization rejects numeric model architectures" do
     tokenizer = BinClass.Tokenizer.train(["hello world"])
 

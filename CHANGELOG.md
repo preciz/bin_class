@@ -28,6 +28,8 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Public APIs now validate known option values before training, loading, model
+  construction, or serving work begins.
 - Argmax is now the default decision policy for every architecture, and `:cnn`
   is the default architecture.
 - Decision policies and input validation no longer derive from model

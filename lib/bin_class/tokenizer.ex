@@ -1,4 +1,5 @@
 defmodule BinClass.Tokenizer do
+  alias BinClass.Options
   alias Tokenizers.{Tokenizer, Trainer, PreTokenizer, Model}
 
   @default_vocab_size 30_000
@@ -41,7 +42,15 @@ defmodule BinClass.Tokenizer do
 
   def train(data, opts \\ []) do
     opts = Keyword.validate!(opts, vocab_size: @default_vocab_size)
-    vocab_size = Keyword.fetch!(opts, :vocab_size)
+
+    vocab_size =
+      opts |> Keyword.fetch!(:vocab_size) |> Options.validate_positive_integer!(:vocab_size)
+
+    if vocab_size < 5 do
+      raise ArgumentError,
+            ":vocab_size must be at least 5 to include the required special tokens, " <>
+              "got: #{vocab_size}"
+    end
 
     {:ok, model} = Model.BPE.init(%{}, [], unk_token: "[UNK]")
     {:ok, tokenizer} = Tokenizer.init(model)

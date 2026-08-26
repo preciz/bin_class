@@ -2,11 +2,11 @@ defmodule BinClass.Model.ParallelCnn do
   @moduledoc false
 
   def build(vocab_size, opts \\ []) do
-    opts = Keyword.validate!(opts, [:embedding_size, :dropout_rate, :pad_token_id, :seed])
+    opts = BinClass.Model.validate_build_options!(vocab_size, opts)
 
-    embedding_size = Keyword.get(opts, :embedding_size, 64)
-    dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
-    pad_token_id = Keyword.get(opts, :pad_token_id, 0)
+    embedding_size = Keyword.fetch!(opts, :embedding_size)
+    dropout_rate = Keyword.fetch!(opts, :dropout_rate)
+    pad_token_id = Keyword.fetch!(opts, :pad_token_id)
 
     input = Axon.input("input")
     masking = BinClass.Model.Masking.new(input, pad_token_id)

@@ -1,7 +1,7 @@
 defmodule BinClass.Serving do
   @moduledoc false
 
-  alias BinClass.{DecisionPolicy, Labels, Model, Vectorizer, Tokenizer}
+  alias BinClass.{DecisionPolicy, Labels, Model, Options, Vectorizer, Tokenizer}
 
   @doc false
   def new(model_params, tokenizer, opts \\ []) do
@@ -19,17 +19,26 @@ defmodule BinClass.Serving do
       ])
 
     vector_length = Keyword.get(opts, :vector_length, 512)
+    architecture = Keyword.get(opts, :architecture, :cnn)
+    Model.validate_vector_length!(architecture, vector_length)
+
+    batch_size =
+      opts |> Keyword.get(:batch_size, 16) |> Options.validate_positive_integer!(:batch_size)
+
+    compiler = opts |> Keyword.get(:compiler, EXLA) |> Options.validate_compiler!()
+
+    defn_options =
+      opts
+      |> Keyword.get(:defn_options, [])
+      |> Options.validate_keyword_list!(:defn_options)
+
+    dropout_rate =
+      opts |> Keyword.get(:dropout_rate, 0.2) |> Options.validate_dropout_rate!()
+
     tokenizer_metadata = Tokenizer.metadata(tokenizer)
     vocab_size = tokenizer_metadata.vocab_size
     pad_token_id = tokenizer_metadata.pad_token_id
     labels = opts |> Keyword.get(:labels, Labels.default()) |> Labels.validate!()
-    batch_size = Keyword.get(opts, :batch_size, 16)
-    compiler = Keyword.get(opts, :compiler, EXLA)
-    defn_options = Keyword.get(opts, :defn_options, [])
-    architecture = Keyword.get(opts, :architecture, :cnn)
-    dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
-
-    Model.validate_vector_length!(architecture, vector_length)
 
     policy =
       opts |> Keyword.get(:decision_policy, %{strategy: :argmax}) |> DecisionPolicy.validate!()

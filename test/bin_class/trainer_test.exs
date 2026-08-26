@@ -275,6 +275,28 @@ defmodule BinClass.TrainerTest do
   test "rejects invalid training options before model setup" do
     data = [%{text: "negative", label: 0}, %{text: "positive", label: 1}]
 
+    for {option, value, message} <- [
+          {:balance, :yes, ~r/:balance must be a boolean/},
+          {:learning_rate, 0, ~r/:learning_rate must be a positive number/},
+          {:learning_rate, :fast, ~r/:learning_rate must be a positive number/},
+          {:decay, -0.1, ~r/:decay must be a non-negative number/},
+          {:patience, -1, ~r/:patience must be a non-negative integer/},
+          {:patience, 1.5, ~r/:patience must be a non-negative integer/},
+          {:dropout_rate, -0.1, ~r/:dropout_rate must be a number/},
+          {:dropout_rate, 1, ~r/:dropout_rate must be a number/},
+          {:compiler, String, ~r/:compiler must be a module implementing Nx.Defn.Compiler/}
+        ] do
+      assert_raise ArgumentError, message, fn ->
+        Trainer.train(data, Keyword.put([batch_size: 1], option, value))
+      end
+    end
+
+    explosive_stream = Stream.map([:unused], fn _ -> raise "training data was consumed" end)
+
+    assert_raise ArgumentError, ~r/:learning_rate must be a positive number/, fn ->
+      Trainer.train(explosive_stream, learning_rate: 0)
+    end
+
     assert_raise ArgumentError, ":epochs must be a positive integer, got: 0", fn ->
       Trainer.train(data, epochs: 0, batch_size: 1)
     end

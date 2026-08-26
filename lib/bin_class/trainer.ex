@@ -1,5 +1,5 @@
 defmodule BinClass.Trainer do
-  alias BinClass.{DecisionPolicy, Labels, Model, Vectorizer, Tokenizer}
+  alias BinClass.{DecisionPolicy, Labels, Model, Options, Vectorizer, Tokenizer}
 
   @default_vector_length 512
   @architecture :cnn
@@ -9,25 +9,26 @@ defmodule BinClass.Trainer do
 
   ## Options
 
-    * `:epochs` - Number of training epochs. Defaults to `10`.
-    * `:batch_size` - Batch size for training. Defaults to `32`.
-    * `:learning_rate` - Initial learning rate. Defaults to `1.0e-3`.
-    * `:decay` - Learning rate decay. Defaults to `1.0e-2`.
+    * `:epochs` - Positive integer number of training epochs. Defaults to `10`.
+    * `:batch_size` - Positive integer batch size for training. Defaults to `32`.
+    * `:learning_rate` - Positive initial learning rate. Defaults to `1.0e-3`.
+    * `:decay` - Non-negative AdamW weight decay. Defaults to `1.0e-2`.
     * `:labels` - Output label names as a two-element list of distinct binaries or
       `%{0 => negative_binary, 1 => positive_binary}`. Defaults to `["0", "1"]`.
     * `:target_mode` - How training labels are interpreted. `:hard` accepts only `0` and `1`;
       `:soft` accepts positive-class probabilities from `0.0` through `1.0`. Defaults to `:hard`.
     * `:target_threshold` - Boundary used to turn soft targets into binary labels for balancing,
       validation metrics, and threshold calibration. Defaults to `0.5`.
-    * `:balance` - Whether to oversample the smaller class in the training partition. Validation
-      examples are never oversampled. Soft targets are assigned to a class using
+    * `:balance` - Boolean controlling whether to oversample the smaller class in the training
+      partition. Validation examples are never oversampled. Soft targets are assigned to a class using
       `:target_threshold`. Defaults to `true`.
     * `:validation_split` - Fraction of full batches to use for validation. Partitions are
       stratified when both target classes can occur in both. Defaults to `0.1`.
-    * `:patience` - Number of epochs to wait for improvement before early stopping. Defaults to `5`.
-    * `:compiler` - The Nx compiler to use. Defaults to `EXLA`.
+    * `:patience` - Non-negative integer number of epochs to wait for improvement before early
+      stopping. Defaults to `5`.
+    * `:compiler` - A module implementing `Nx.Defn.Compiler`. Defaults to `EXLA`.
     * `:architecture` - The named architecture to use. Defaults to `#{@architecture}`.
-    * `:dropout_rate` - Dropout rate for the model. Defaults to `0.2`.
+    * `:dropout_rate` - Dropout rate from `0.0` up to, but excluding, `1.0`. Defaults to `0.2`.
     * `:decision_policy` - How probabilities become labels. Accepts `:argmax`,
       `{:positive_threshold, threshold}`, `:optimize_threshold`, or
       `{:optimize_threshold, options}`. Threshold optimization options are `:objective`
@@ -35,7 +36,8 @@ defmodule BinClass.Trainer do
       Defaults to `:argmax`.
     * `:minimum_input_tokens` - Inputs with fewer active tokens return
       `:insufficient_input` at inference. Defaults to `0`.
-    * `:vector_length` - Fixed sequence length for tokenization. Defaults to `512`.
+    * `:vector_length` - Positive fixed sequence length satisfying the architecture's minimum.
+      Defaults to `512`.
     * `:seed` - Optional integer seed for deterministic partition ordering, model initialization,
       and dropout. Defaults to nondeterministic training.
   """
@@ -61,28 +63,39 @@ defmodule BinClass.Trainer do
         :seed
       ])
 
-    clear_recompilation_counters()
     target_mode = Keyword.get(opts, :target_mode, :hard)
     target_threshold = Keyword.get(opts, :target_threshold, 0.5)
-    balance? = Keyword.get(opts, :balance, true)
+    balance? = opts |> Keyword.get(:balance, true) |> Options.validate_boolean!(:balance)
     seed = Keyword.get(opts, :seed)
-
-    vectorization_concurrency = min(4, System.schedulers_online())
 
     validate_target_options!(target_mode, target_threshold)
     validate_seed!(seed)
 
     epochs = Keyword.get(opts, :epochs, 10)
     batch_size = Keyword.get(opts, :batch_size, 32)
-    learning_rate = Keyword.get(opts, :learning_rate, 1.0e-3)
-    decay = Keyword.get(opts, :decay, 1.0e-2)
+
+    learning_rate =
+      opts
+      |> Keyword.get(:learning_rate, 1.0e-3)
+      |> Options.validate_positive_number!(:learning_rate)
+
+    decay =
+      opts
+      |> Keyword.get(:decay, 1.0e-2)
+      |> Options.validate_non_negative_number!(:decay)
+
     labels = opts |> Keyword.get(:labels, Labels.default()) |> Labels.validate!()
     validation_split = Keyword.get(opts, :validation_split, 0.1)
-    patience = Keyword.get(opts, :patience, 5)
-    compiler = Keyword.get(opts, :compiler, EXLA)
+
+    patience =
+      opts
+      |> Keyword.get(:patience, 5)
+      |> Options.validate_non_negative_integer!(:patience)
+
+    compiler = opts |> Keyword.get(:compiler, EXLA) |> Options.validate_compiler!()
     architecture = Keyword.get(opts, :architecture, @architecture)
     Model.validate_name!(architecture)
-    dropout_rate = Keyword.get(opts, :dropout_rate, 0.2)
+    dropout_rate = opts |> Keyword.get(:dropout_rate, 0.2) |> Options.validate_dropout_rate!()
     vector_length = Keyword.get(opts, :vector_length, @default_vector_length)
 
     decision_config =
@@ -95,10 +108,7 @@ defmodule BinClass.Trainer do
       |> Keyword.get(:minimum_input_tokens, 0)
       |> DecisionPolicy.validate_minimum_input_tokens!()
 
-    data_stream = Enum.to_list(data_stream)
-
     validate_training_configuration!(
-      length(data_stream),
       epochs,
       batch_size,
       validation_split,
@@ -106,6 +116,12 @@ defmodule BinClass.Trainer do
       vector_length,
       minimum_input_tokens
     )
+
+    data_stream = Enum.to_list(data_stream)
+
+    if data_stream == [] do
+      raise ArgumentError, "training data must not be empty"
+    end
 
     validate_targets!(data_stream, target_mode)
     validate_partition_sizes!(length(data_stream), batch_size, validation_split)
@@ -118,6 +134,9 @@ defmodule BinClass.Trainer do
       target_mode,
       target_threshold
     )
+
+    clear_recompilation_counters()
+    vectorization_concurrency = min(4, System.schedulers_online())
 
     tokenizer = Tokenizer.train(Stream.map(data_stream, & &1.text))
     tokenizer_metadata = Tokenizer.metadata(tokenizer)
@@ -657,7 +676,6 @@ defmodule BinClass.Trainer do
   end
 
   defp validate_training_configuration!(
-         data_size,
          epochs,
          batch_size,
          validation_split,
@@ -685,10 +703,6 @@ defmodule BinClass.Trainer do
       raise ArgumentError,
             ":minimum_input_tokens cannot exceed :vector_length, got " <>
               "#{minimum_input_tokens} and #{vector_length}"
-    end
-
-    if data_size == 0 do
-      raise ArgumentError, "training data must not be empty"
     end
   end
 

@@ -2,6 +2,7 @@ defmodule BinClass.DocumentPredictor do
   @moduledoc false
 
   alias Chunx.Chunker.Token
+  alias BinClass.Options
 
   def compile(%BinClass.Classifier{} = classifier, opts) do
     opts =
@@ -14,6 +15,14 @@ defmodule BinClass.DocumentPredictor do
 
     chunk_size = Keyword.fetch!(opts, :chunk_size)
     chunk_overlap = Keyword.fetch!(opts, :chunk_overlap)
+
+    opts
+    |> Keyword.fetch!(:compiler)
+    |> Options.validate_compiler!()
+
+    opts
+    |> Keyword.fetch!(:batch_size)
+    |> Options.validate_positive_integer!(:batch_size)
 
     validate_chunk_size!(chunk_size, classifier.vector_length)
     validate_chunk_overlap!(chunk_overlap, chunk_size)
