@@ -142,7 +142,6 @@ defmodule BinClass.Trainer do
       target_threshold
     )
 
-    clear_recompilation_counters()
     vectorization_concurrency = min(4, System.schedulers_online())
 
     tokenizer = Tokenizer.train(Stream.map(data_stream, & &1.text))
@@ -906,14 +905,5 @@ defmodule BinClass.Trainer do
         }
       end)
     end)
-  end
-
-  defp clear_recompilation_counters do
-    if Code.ensure_loaded?(EXLA.Defn.LockedCache) and
-         :ets.info(EXLA.Defn.LockedCache) != :undefined do
-      :ets.match_delete(EXLA.Defn.LockedCache, {{:counter, :_}, :_})
-    end
-  rescue
-    _ -> :ok
   end
 end
