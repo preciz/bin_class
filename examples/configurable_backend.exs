@@ -1,8 +1,7 @@
 # examples/configurable_backend.exs
 
-# This example demonstrates how to use a custom compiler and definition options.
-# While EXLA is the default, you might want to use others like Nx.BinaryBackend
-# for environments where XLA is not available, or Torchx.
+# This example demonstrates how to select a custom Nx compiler. EXLA is the
+# default; Nx.Defn.Evaluator is a portable fallback that does not use XLA.
 
 data = [
   %{text: "This is amazing!", label: 1},
@@ -11,26 +10,32 @@ data = [
   %{text: "Terrible experience.", label: 0}
 ]
 
-data = List.duplicate(data, 10) |> List.flatten()
+data = List.duplicate(data, 2) |> List.flatten()
 
-# 1. Training with a specific compiler (optional, defaults to EXLA)
-# Here we use EXLA explicitly.
+# 1. Train with a specific compiler (optional; defaults to EXLA).
 classifier =
   BinClass.Trainer.train(data,
-    epochs: 5,
-    labels: %{0 => :negative, 1 => :positive},
-    compiler: EXLA
+    epochs: 1,
+    batch_size: 2,
+    vector_length: 16,
+    labels: %{0 => "negative", 1 => "positive"},
+    compiler: Nx.Defn.Evaluator,
+    seed: 42
   )
 
 model_path = "configurable_model.bin"
 BinClass.save(classifier, model_path)
 
-# 2. Loading with a specific compiler and defn_options
-# This is useful for inference-time optimization or fallback backends.
-serving = BinClass.load(model_path,
-  compiler: EXLA,
-  defn_options: [compiler: EXLA]
-)
+# 2. Select the same compiler when loading for inference.
+serving = BinClass.load(model_path, compiler: Nx.Defn.Evaluator)
 
 prediction = Nx.Serving.run(serving, "What a wonderful tool!")
-IO.puts("Prediction: #{prediction.label} (Confidence: #{Float.round(prediction.confidence * 100, 2)}%)")
+
+case prediction do
+  %{label: :insufficient_input, active_token_count: active_token_count} ->
+    IO.puts("Prediction: insufficient input (#{active_token_count} active tokens)")
+
+  %{label: label, confidence: confidence, active_token_count: active_token_count} ->
+    percent = Float.round(confidence * 100, 2)
+    IO.puts("Prediction: #{label} (#{percent}%, #{active_token_count} active tokens)")
+end

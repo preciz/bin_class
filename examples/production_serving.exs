@@ -27,4 +27,11 @@ end
 text = "The masterpiece of the decade!"
 result = Nx.Serving.batched_run(MyApp.Classifier, text)
 
-IO.puts("#{text} -> #{result.label} (#{Float.round(result.confidence * 100, 2)}%)")
+case result do
+  %{label: :insufficient_input, active_token_count: active_token_count} ->
+    IO.puts("#{text} -> insufficient input (#{active_token_count} active tokens)")
+
+  %{label: label, confidence: confidence, active_token_count: active_token_count} ->
+    percent = Float.round(confidence * 100, 2)
+    IO.puts("#{text} -> #{label} (#{percent}%, #{active_token_count} active tokens)")
+end

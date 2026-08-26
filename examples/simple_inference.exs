@@ -9,11 +9,21 @@ end
 
 serving = BinClass.load(model_path)
 
+format_prediction = fn text, prediction ->
+  case prediction do
+    %{label: :insufficient_input, active_token_count: active_token_count} ->
+      "#{text} -> insufficient input (#{active_token_count} active tokens)"
+
+    %{label: label, confidence: confidence, active_token_count: active_token_count} ->
+      percent = Float.round(confidence * 100, 2)
+      "#{text} -> #{label} (#{percent}%, #{active_token_count} active tokens)"
+  end
+end
+
 # Single prediction
 text = "That was a great movie!"
 prediction = Nx.Serving.run(serving, text)
-
-IO.puts("#{text} -> #{prediction.label} (#{Float.round(prediction.confidence * 100, 2)}%)")
+IO.puts(format_prediction.(text, prediction))
 
 # Batch prediction
 batch = [
@@ -24,5 +34,5 @@ batch = [
 results = Nx.Serving.run(serving, batch)
 
 for {t, p} <- Enum.zip(batch, results) do
-  IO.puts("#{t} -> #{p.label} (#{Float.round(p.confidence * 100, 2)}%)")
+  IO.puts(format_prediction.(t, p))
 end

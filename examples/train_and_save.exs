@@ -18,9 +18,13 @@ data = List.duplicate(data, 10) |> List.flatten()
 # Train
 classifier =
   BinClass.Trainer.train(data,
-    epochs: 10,
-    labels: %{0 => :negative, 1 => :positive},
-    validation_split: 0.2
+    epochs: 3,
+    batch_size: 10,
+    vector_length: 64,
+    labels: %{0 => "negative", 1 => "positive"},
+    validation_split: 0.2,
+    minimum_input_tokens: 2,
+    seed: 42
   )
 
 IO.inspect(classifier)
@@ -28,3 +32,4 @@ IO.inspect(classifier)
 # Save
 model_path = "movie_classifier.bin"
 BinClass.save(classifier, model_path)
+IO.puts("Saved classifier to #{model_path}")
