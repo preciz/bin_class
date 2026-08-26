@@ -4,7 +4,8 @@ defmodule BinClass.TrainerTest do
 
   test "splits before balancing and never copies training examples into validation" do
     data = [
-      %{id: :positive, text: "positive", label: 1},
+      %{id: :positive_1, text: "positive", label: 1},
+      %{id: :positive_2, text: "positive", label: 1},
       %{id: :negative_1, text: "negative", label: 0},
       %{id: :negative_2, text: "negative", label: 0},
       %{id: :negative_3, text: "negative", label: 0},
@@ -12,20 +13,38 @@ defmodule BinClass.TrainerTest do
       %{id: :negative_5, text: "negative", label: 0},
       %{id: :negative_6, text: "negative", label: 0},
       %{id: :negative_7, text: "negative", label: 0},
-      %{id: :validation_1, text: "validation", label: 0},
-      %{id: :validation_2, text: "validation", label: 0}
+      %{id: :negative_8, text: "negative", label: 0}
     ]
 
     {training, validation} =
-      Trainer.split_and_balance_data(data, 1, 0.2, true, :hard, 0.5, nil)
+      Trainer.split_and_balance_data(data, 1, 0.2, true, :hard, 0.5, 1234)
 
     assert length(training) == 14
-    assert Enum.count(training, &(&1.id == :positive)) == 7
-    assert Enum.map(validation, & &1.id) == [:validation_1, :validation_2]
+    assert Enum.count(training, &(&1.label == 1)) == 7
+    assert Enum.sort(Enum.map(validation, & &1.label)) == [0, 1]
 
     training_ids = MapSet.new(training, & &1.id)
     validation_ids = MapSet.new(validation, & &1.id)
     assert MapSet.disjoint?(training_ids, validation_ids)
+  end
+
+  test "stratifies imbalanced hard and soft targets when both classes can cover both partitions" do
+    hard_data =
+      for id <- 1..20 do
+        %{id: id, text: "row #{id}", label: if(id <= 2, do: 1, else: 0)}
+      end
+
+    {_training, validation} =
+      Trainer.split_and_balance_data(hard_data, 2, 0.1, false, :hard, 0.5, 1234)
+
+    assert Enum.sort(Enum.map(validation, & &1.label)) == [0, 1]
+
+    soft_data = Enum.map(hard_data, &%{&1 | label: if(&1.label == 1, do: 0.8, else: 0.2)})
+
+    {_training, validation} =
+      Trainer.split_and_balance_data(soft_data, 2, 0.1, false, :soft, 0.5, 1234)
+
+    assert Enum.sort(Enum.map(validation, & &1.label)) == [0.2, 0.8]
   end
 
   test "balance_data/1 covers all branches" do
@@ -172,6 +191,41 @@ defmodule BinClass.TrainerTest do
            } = result.decision_policy
 
     assert threshold >= 0.0 and threshold <= 1.0
+  end
+
+  test "threshold optimization fails before model setup when both partitions cannot contain both classes" do
+    insufficient_class =
+      for id <- 1..20 do
+        %{id: id, text: "row #{id}", label: if(id == 1, do: 1, else: 0)}
+      end
+
+    assert_raise ArgumentError,
+                 ~r/threshold optimization needs at least two examples from each class.*19 negative and 1 positive/s,
+                 fn ->
+                   Trainer.train(insufficient_class,
+                     batch_size: 2,
+                     vector_length: 8,
+                     decision_policy: :optimize_threshold
+                   )
+                 end
+
+    partition_too_small = [
+      %{text: "negative 1", label: 0},
+      %{text: "negative 2", label: 0},
+      %{text: "positive 1", label: 1},
+      %{text: "positive 2", label: 1}
+    ]
+
+    assert_raise ArgumentError,
+                 ~r/partitions that can each contain both classes.*3 training and 1 validation/s,
+                 fn ->
+                   Trainer.train(partition_too_small,
+                     batch_size: 1,
+                     validation_split: 0.25,
+                     vector_length: 8,
+                     decision_policy: :optimize_threshold
+                   )
+                 end
   end
 
   test "explicit vector_length" do

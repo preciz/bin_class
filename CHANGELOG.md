@@ -43,6 +43,9 @@ All notable changes to this project are documented in this file.
   retrained rather than silently running against a different graph.
 - Training accepts an optional seed for deterministic data ordering, model
   initialization, and dropout state.
+- Training and validation partitions are now stratified whenever both target
+  classes have enough examples to occur in both partitions. Threshold
+  optimization fails before tokenizer or model setup when that is impossible.
 - Threshold calibration now computes validation predictions once and reuses
   them across all threshold candidates.
 - Serving and compiled prediction now obtain active lengths directly from the

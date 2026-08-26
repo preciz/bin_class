@@ -22,7 +22,8 @@ defmodule BinClass.Trainer do
     * `:balance` - Whether to oversample the smaller class in the training partition. Validation
       examples are never oversampled. Soft targets are assigned to a class using
       `:target_threshold`. Defaults to `true`.
-    * `:validation_split` - Fraction of data to use for validation. Defaults to `0.1`.
+    * `:validation_split` - Fraction of full batches to use for validation. Partitions are
+      stratified when both target classes can occur in both. Defaults to `0.1`.
     * `:patience` - Number of epochs to wait for improvement before early stopping. Defaults to `5`.
     * `:compiler` - The Nx compiler to use. Defaults to `EXLA`.
     * `:architecture` - The named architecture to use. Defaults to `#{@architecture}`.
@@ -109,15 +110,23 @@ defmodule BinClass.Trainer do
     validate_targets!(data_stream, target_mode)
     validate_partition_sizes!(length(data_stream), batch_size, validation_split)
 
+    validate_threshold_optimization_partitions!(
+      decision_config,
+      data_stream,
+      batch_size,
+      validation_split,
+      target_mode,
+      target_threshold
+    )
+
     tokenizer = Tokenizer.train(Stream.map(data_stream, & &1.text))
     tokenizer_metadata = Tokenizer.metadata(tokenizer)
     vocab_size = tokenizer_metadata.vocab_size
     pad_token_id = tokenizer_metadata.pad_token_id
 
     {train_examples, test_examples} =
-      data_stream
-      |> shuffle(seed, :partition)
-      |> split_and_balance_data(
+      split_and_balance_data(
+        data_stream,
         batch_size,
         validation_split,
         balance?,
@@ -213,10 +222,53 @@ defmodule BinClass.Trainer do
         target_threshold,
         seed
       ) do
-    batch_count = div(length(data), batch_size)
-    train_batches_count = floor(batch_count * (1.0 - validation_split))
-    train_examples_count = train_batches_count * batch_size
-    {train_data, validation_data} = Enum.split(data, train_examples_count)
+    {train_examples_count, validation_examples_count} =
+      partition_example_counts(length(data), batch_size, validation_split)
+
+    {class_0, class_1} =
+      Enum.split_with(data, &(target_class(&1.label, target_mode, target_threshold) == 0))
+
+    class_0 = shuffle(class_0, seed, :partition_class_0)
+    class_1 = shuffle(class_1, seed, :partition_class_1)
+
+    stratified? =
+      length(class_0) >= 2 and length(class_1) >= 2 and
+        train_examples_count >= 2 and validation_examples_count >= 2
+
+    minimum_per_class = if stratified?, do: 1, else: 0
+
+    validation_class_1_count =
+      partition_class_1_count(
+        validation_examples_count,
+        length(class_0) - minimum_per_class,
+        length(class_1) - minimum_per_class,
+        minimum_per_class,
+        minimum_per_class
+      )
+
+    validation_class_0_count = validation_examples_count - validation_class_1_count
+
+    {validation_class_0, remaining_class_0} = Enum.split(class_0, validation_class_0_count)
+    {validation_class_1, remaining_class_1} = Enum.split(class_1, validation_class_1_count)
+
+    train_class_1_count =
+      partition_class_1_count(
+        train_examples_count,
+        length(remaining_class_0),
+        length(remaining_class_1),
+        minimum_per_class,
+        minimum_per_class
+      )
+
+    train_class_0_count = train_examples_count - train_class_1_count
+
+    train_data =
+      Enum.take(remaining_class_0, train_class_0_count) ++
+        Enum.take(remaining_class_1, train_class_1_count)
+
+    validation_data =
+      (validation_class_0 ++ validation_class_1)
+      |> shuffle(seed, :validation_partition)
 
     train_data =
       if balance? do
@@ -224,7 +276,7 @@ defmodule BinClass.Trainer do
         |> balance_data(target_mode, target_threshold)
         |> shuffle(seed, :balanced_training)
       else
-        train_data
+        shuffle(train_data, seed, :training_partition)
       end
 
     {train_data, validation_data}
@@ -641,10 +693,10 @@ defmodule BinClass.Trainer do
   end
 
   defp validate_partition_sizes!(data_size, batch_size, validation_split) do
-    batch_count = div(data_size, batch_size)
-    train_batches_count = floor(batch_count * (1.0 - validation_split))
-    train_examples_count = train_batches_count * batch_size
-    validation_examples_count = data_size - train_examples_count
+    {train_examples_count, validation_examples_count} =
+      partition_example_counts(data_size, batch_size, validation_split)
+
+    train_batches_count = div(train_examples_count, batch_size)
     validation_batches_count = div(validation_examples_count, batch_size)
 
     if train_batches_count == 0 or validation_batches_count == 0 do
@@ -656,6 +708,76 @@ defmodule BinClass.Trainer do
               "validation batches; reduce :batch_size, adjust :validation_split, or " <>
               "provide more data"
     end
+  end
+
+  defp validate_threshold_optimization_partitions!(
+         {:fixed, _policy},
+         _data,
+         _batch_size,
+         _validation_split,
+         _target_mode,
+         _target_threshold
+       ),
+       do: :ok
+
+  defp validate_threshold_optimization_partitions!(
+         {:optimize, _optimization},
+         data,
+         batch_size,
+         validation_split,
+         target_mode,
+         target_threshold
+       ) do
+    {class_0_count, class_1_count} = class_counts(data, target_mode, target_threshold)
+
+    if class_0_count < 2 or class_1_count < 2 do
+      raise ArgumentError,
+            "threshold optimization needs at least two examples from each class so training " <>
+              "and validation can each contain both classes; got #{class_0_count} negative " <>
+              "and #{class_1_count} positive examples"
+    end
+
+    {train_examples_count, validation_examples_count} =
+      partition_example_counts(length(data), batch_size, validation_split)
+
+    if train_examples_count < 2 or validation_examples_count < 2 do
+      raise ArgumentError,
+            "threshold optimization needs training and validation partitions that can each " <>
+              "contain both classes; batch_size #{batch_size} and validation_split " <>
+              "#{inspect(validation_split)} produce #{train_examples_count} training and " <>
+              "#{validation_examples_count} validation examples"
+    end
+
+    :ok
+  end
+
+  defp partition_example_counts(data_size, batch_size, validation_split) do
+    batch_count = div(data_size, batch_size)
+    train_batches_count = floor(batch_count * (1.0 - validation_split))
+    validation_batches_count = batch_count - train_batches_count
+
+    {train_batches_count * batch_size, validation_batches_count * batch_size}
+  end
+
+  defp class_counts(data, target_mode, target_threshold) do
+    Enum.reduce(data, {0, 0}, fn row, {class_0_count, class_1_count} ->
+      case target_class(row.label, target_mode, target_threshold) do
+        0 -> {class_0_count + 1, class_1_count}
+        1 -> {class_0_count, class_1_count + 1}
+      end
+    end)
+  end
+
+  defp partition_class_1_count(partition_size, class_0_count, class_1_count, min_0, min_1) do
+    minimum = max(min_1, partition_size - class_0_count)
+    maximum = min(class_1_count, partition_size - min_0)
+
+    proportional =
+      round(partition_size * class_1_count / (class_0_count + class_1_count))
+
+    proportional
+    |> max(minimum)
+    |> min(maximum)
   end
 
   defp shuffle(data, nil, _salt), do: Enum.shuffle(data)
