@@ -42,7 +42,7 @@ defmodule BinClass.Tokenizer do
       expected_value = Map.fetch!(expected, key)
       actual_value = Map.fetch!(actual, key)
 
-      unless expected_value == actual_value do
+      if expected_value != actual_value do
         raise ArgumentError,
               "stored tokenizer metadata #{key} is #{inspect(expected_value)}, " <>
                 "but tokenizer JSON contains #{inspect(actual_value)}"

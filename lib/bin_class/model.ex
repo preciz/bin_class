@@ -79,7 +79,7 @@ defmodule BinClass.Model do
   def validate_vector_length!(architecture, vector_length) do
     minimum = minimum_vector_length(architecture)
 
-    unless is_integer(vector_length) and vector_length > 0 do
+    if !(is_integer(vector_length) and vector_length > 0) do
       raise ArgumentError,
             ":vector_length must be a positive integer, got: #{inspect(vector_length)}"
     end

@@ -181,7 +181,7 @@ defmodule BinClass.Training.Dataset do
   defp validate_target!(row, target_mode) do
     label = Map.fetch!(row, :label)
 
-    unless valid_target?(label, target_mode) do
+    if !valid_target?(label, target_mode) do
       raise ArgumentError,
             "invalid #{target_mode} target #{inspect(label)}; " <>
               "expected #{target_expectation(target_mode)}"

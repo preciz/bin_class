@@ -103,12 +103,12 @@ defmodule BinClass.Training.Config do
   end
 
   defp validate_target_options!(target_mode, target_threshold) do
-    unless target_mode in [:hard, :soft] do
+    if target_mode not in [:hard, :soft] do
       raise ArgumentError,
             ":target_mode must be :hard or :soft, got: #{inspect(target_mode)}"
     end
 
-    unless is_number(target_threshold) and target_threshold >= 0 and target_threshold <= 1 do
+    if !(is_number(target_threshold) and target_threshold >= 0 and target_threshold <= 1) do
       raise ArgumentError,
             ":target_threshold must be a number between 0 and 1, got: " <>
               inspect(target_threshold)
@@ -116,18 +116,18 @@ defmodule BinClass.Training.Config do
   end
 
   defp validate_configuration!(config) do
-    unless is_integer(config.epochs) and config.epochs > 0 do
+    if !(is_integer(config.epochs) and config.epochs > 0) do
       raise ArgumentError,
             ":epochs must be a positive integer, got: #{inspect(config.epochs)}"
     end
 
-    unless is_integer(config.batch_size) and config.batch_size > 0 do
+    if !(is_integer(config.batch_size) and config.batch_size > 0) do
       raise ArgumentError,
             ":batch_size must be a positive integer, got: #{inspect(config.batch_size)}"
     end
 
-    unless is_number(config.validation_split) and config.validation_split > 0 and
-             config.validation_split < 1 do
+    if !(is_number(config.validation_split) and config.validation_split > 0 and
+           config.validation_split < 1) do
       raise ArgumentError,
             ":validation_split must be a number greater than 0 and less than 1, " <>
               "got: #{inspect(config.validation_split)}"

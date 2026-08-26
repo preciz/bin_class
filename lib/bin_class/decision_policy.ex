@@ -22,13 +22,13 @@ defmodule BinClass.DecisionPolicy do
     objective = Keyword.fetch!(opts, :objective)
     false_positive_cost = Keyword.fetch!(opts, :false_positive_cost)
 
-    unless objective in @objectives do
+    if objective not in @objectives do
       raise ArgumentError,
             "threshold optimization :objective must be one of #{inspect(@objectives)}, " <>
               "got: #{inspect(objective)}"
     end
 
-    unless is_number(false_positive_cost) and false_positive_cost >= 0 do
+    if !(is_number(false_positive_cost) and false_positive_cost >= 0) do
       raise ArgumentError,
             "threshold optimization :false_positive_cost must be a non-negative number, " <>
               "got: #{inspect(false_positive_cost)}"
@@ -52,8 +52,8 @@ defmodule BinClass.DecisionPolicy do
   def validate!(%{strategy: :positive_threshold, positive_threshold: threshold} = policy) do
     validate_threshold!(threshold)
 
-    unless Map.keys(policy)
-           |> Enum.all?(&(&1 in [:strategy, :positive_threshold, :optimization])) do
+    if !(Map.keys(policy)
+         |> Enum.all?(&(&1 in [:strategy, :positive_threshold, :optimization]))) do
       raise ArgumentError, "invalid decision policy: #{inspect(policy)}"
     end
 
