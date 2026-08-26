@@ -52,6 +52,9 @@ defmodule BinClass.TrainerTest do
     data_c1_gt_c0 = [
       %{text: "pos", label: 1},
       %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "pos", label: 1},
+      %{text: "neg", label: 0},
       %{text: "neg", label: 0}
     ]
 
@@ -323,6 +326,10 @@ defmodule BinClass.TrainerTest do
 
   test "rejects empty data and configurations with empty batch partitions" do
     assert_raise ArgumentError, "training data must not be empty", fn ->
+      Trainer.train([])
+    end
+
+    assert_raise ArgumentError, "training data must not be empty", fn ->
       Trainer.train([], batch_size: 1)
     end
 
@@ -336,6 +343,26 @@ defmodule BinClass.TrainerTest do
                  fn ->
                    Trainer.train(data, batch_size: 6, validation_split: 0.2)
                  end
+  end
+
+  test "rejects minimum input validation that excludes every validation example" do
+    data = [
+      %{text: "negative", label: 0},
+      %{text: "negative", label: 0},
+      %{text: "positive", label: 1},
+      %{text: "positive", label: 1}
+    ]
+
+    assert_raise ArgumentError, ~r/excludes every validation example/, fn ->
+      Trainer.train(data,
+        epochs: 1,
+        batch_size: 1,
+        validation_split: 0.5,
+        vector_length: 8,
+        minimum_input_tokens: 8,
+        seed: 1234
+      )
+    end
   end
 
   test "seed makes partitioning and balancing deterministic" do

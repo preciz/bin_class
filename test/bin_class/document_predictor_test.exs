@@ -83,6 +83,14 @@ defmodule BinClass.DocumentPredictorTest do
     end)
   end
 
+  test "public inference constructors accept their documented default options", %{
+    classifier: classifier
+  } do
+    assert %Nx.Serving{} = BinClass.serving(classifier)
+    assert is_function(BinClass.compile_predictor(classifier), 1)
+    assert is_function(BinClass.compile_document_predictor(classifier), 1)
+  end
+
   test "scans complete long inputs without normalization or truncation", %{
     classifier: classifier
   } do
@@ -141,6 +149,10 @@ defmodule BinClass.DocumentPredictorTest do
 
     assert_raise ArgumentError, ~r/expects a single string/, fn ->
       predict.(["first", "second"])
+    end
+
+    assert_raise ArgumentError, ~r/could not chunk document/, fn ->
+      predict.(<<255>>)
     end
   end
 

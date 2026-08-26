@@ -58,5 +58,13 @@ defmodule BinClass.DecisionPolicyTest do
     assert_raise ArgumentError, ~r/cannot exceed :vector_length/, fn ->
       DecisionPolicy.validate_minimum_input_tokens!(9, 8)
     end
+
+    assert_raise ArgumentError, ~r/invalid decision policy/, fn ->
+      DecisionPolicy.validate!(Map.put(policy, :unexpected, true))
+    end
+
+    assert_raise ArgumentError, ~r/invalid decision policy/, fn ->
+      DecisionPolicy.validate!(%{strategy: :automatic})
+    end
   end
 end

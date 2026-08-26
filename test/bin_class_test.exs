@@ -21,6 +21,10 @@ defmodule BinClassTest do
         ] do
       assert_raise ArgumentError, ~r/unknown keys.*:not_an_option/s, operation
     end
+
+    assert_raise ArgumentError, ~r/:batch_size must be a positive integer/, fn ->
+      BinClass.compile_predictor(classifier, batch_size: 0)
+    end
   end
 
   test "serialization rejects numeric model architectures" do

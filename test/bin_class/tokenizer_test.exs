@@ -42,4 +42,17 @@ defmodule BinClass.TokenizerTest do
       Tokenizer.train(["hello world"], not_an_option: true)
     end
   end
+
+  test "rejects invalid training rows and tokenizers missing required special tokens" do
+    assert_raise ArgumentError, ~r/training data must contain strings/, fn ->
+      Tokenizer.train(["valid", :invalid])
+    end
+
+    {:ok, model} = Tokenizers.Model.BPE.init(%{}, [], unk_token: "[UNK]")
+    {:ok, tokenizer} = Tokenizers.Tokenizer.init(model)
+
+    assert_raise ArgumentError, ~r/missing required token "\[PAD\]"/, fn ->
+      Tokenizer.metadata(tokenizer)
+    end
+  end
 end

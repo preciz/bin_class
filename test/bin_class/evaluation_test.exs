@@ -78,6 +78,17 @@ defmodule BinClass.EvaluationTest do
     assert result.excluded_count == 1
   end
 
+  test "calibrates when the highest observed probability is exactly one" do
+    result =
+      Evaluation.calibrate([
+        %{probability: 1.0, label: 1},
+        %{probability: 0.0, label: 0}
+      ])
+
+    assert result.threshold == 0.5
+    assert result.accuracy == 1.0
+  end
+
   test "selects and identifies the best named probability strategy" do
     rows = [
       %{label: 1, scores: %{maximum: 0.9, mean: 0.9}},
@@ -188,6 +199,38 @@ defmodule BinClass.EvaluationTest do
 
     assert_raise ArgumentError, ~r/:strategies must be a non-empty list/, fn ->
       Evaluation.select([%{probability: 0.5, label: 1}], strategies: [])
+    end
+  end
+
+  test "reports malformed strategies, accessors, eligibility, and costs" do
+    rows = [%{probability: 0.5, label: 1}]
+
+    assert_raise ArgumentError, ~r/must contain \{name, accessor\} pairs/, fn ->
+      Evaluation.select(rows, strategies: [:not_a_pair])
+    end
+
+    assert_raise ArgumentError, ~r/must use unique names/, fn ->
+      Evaluation.select(rows, strategies: [same: :probability, same: :probability])
+    end
+
+    assert_raise ArgumentError, ~r/could not find key :missing/, fn ->
+      Evaluation.evaluate(rows, probability: :missing)
+    end
+
+    assert_raise ArgumentError, ~r/map-key accessor :probability requires a map row/, fn ->
+      Evaluation.evaluate([{0.5, 1}], label: &elem(&1, 1))
+    end
+
+    assert_raise ArgumentError, ~r/:probability must be a map key or one-argument function/, fn ->
+      Evaluation.evaluate(rows, probability: "probability")
+    end
+
+    assert_raise ArgumentError, ~r/:eligible must resolve to a boolean/, fn ->
+      Evaluation.evaluate([%{probability: 0.5, label: 1, eligible: 1}], eligible: :eligible)
+    end
+
+    assert_raise ArgumentError, ~r/:false_positive_cost must be a non-negative number/, fn ->
+      Evaluation.evaluate(rows, false_positive_cost: -1)
     end
   end
 end

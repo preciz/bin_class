@@ -297,6 +297,21 @@ defmodule BinClass.ModelTest do
     end
   end
 
+  test "kernel-one convolution masking preserves the exact token mask" do
+    input = Axon.input("input")
+
+    %BinClass.Model.Masking{token_mask: output} =
+      input
+      |> BinClass.Model.Masking.new(3)
+      |> BinClass.Model.Masking.valid_convolution(1)
+
+    {init_fn, predict_fn} = Axon.build(output)
+    token_ids = Nx.tensor([[1, 3, 0, 3]], type: :u16)
+    params = init_fn.(token_ids, Axon.ModelState.empty())
+
+    assert predict_fn.(params, token_ids) |> Nx.to_list() == [[1, 0, 1, 0]]
+  end
+
   defp architecture_options(architecture, common) do
     architecture_specific =
       case architecture do
