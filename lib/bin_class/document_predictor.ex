@@ -28,7 +28,7 @@ defmodule BinClass.DocumentPredictor do
     validate_chunk_overlap!(chunk_overlap, chunk_size)
 
     predictor =
-      BinClass.compile_predictor(classifier,
+      BinClass.Predictor.compile(classifier,
         compiler: Keyword.fetch!(opts, :compiler),
         batch_size: Keyword.fetch!(opts, :batch_size)
       )

@@ -28,6 +28,8 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Extracted compiled prediction and shared model configuration into focused
+  internal modules, removing runtime dependency cycles.
 - Public APIs now validate known option values before training, loading, model
   construction, or serving work begins.
 - Argmax is now the default decision policy for every architecture, and `:cnn`

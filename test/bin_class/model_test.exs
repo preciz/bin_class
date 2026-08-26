@@ -332,7 +332,7 @@ defmodule BinClass.ModelTest do
     end
 
     assert_raise ArgumentError, ~r/:seed must be an integer or nil/, fn ->
-      Model.dropout_options(:random, 0.2, 0)
+      BinClass.Model.Config.dropout_options(:random, 0.2, 0)
     end
 
     input = Axon.input("input")

@@ -1,8 +1,9 @@
 defmodule BinClass.Model.ParallelCnn do
   @moduledoc false
+  alias BinClass.Model.Config
 
   def build(vocab_size, opts \\ []) do
-    opts = BinClass.Model.validate_build_options!(vocab_size, opts)
+    opts = Config.validate_options!(vocab_size, opts)
 
     embedding_size = Keyword.fetch!(opts, :embedding_size)
     dropout_rate = Keyword.fetch!(opts, :dropout_rate)
@@ -15,7 +16,7 @@ defmodule BinClass.Model.ParallelCnn do
       input
       |> Axon.embedding(vocab_size, embedding_size)
       |> BinClass.Model.Masking.mask_sequence(masking)
-      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
+      |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
 
     # 3 Parallel branches with Kernels 1, 3, 5
     # 32 filters each (Total 96 filters)
@@ -28,7 +29,7 @@ defmodule BinClass.Model.ParallelCnn do
     Axon.concatenate([b1, b2, b3], axis: -1)
     |> mixed_pooling(masking)
     |> Axon.dense(64, activation: :relu)
-    |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
+    |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
     |> Axon.dense(2, activation: :softmax)
   end
 

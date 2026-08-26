@@ -2,9 +2,10 @@ defmodule BinClass.Model.Transformer do
   @moduledoc """
   A custom Transformer Encoder architecture.
   """
+  alias BinClass.Model.Config
 
   def build(vocab_size, opts \\ []) do
-    opts = BinClass.Model.validate_build_options!(vocab_size, opts, ff_dim: 128)
+    opts = Config.validate_options!(vocab_size, opts, ff_dim: 128)
 
     embedding_size = Keyword.fetch!(opts, :embedding_size)
     ff_dim = Keyword.fetch!(opts, :ff_dim)
@@ -44,7 +45,7 @@ defmodule BinClass.Model.Transformer do
         [embedded_raw]
       )
       |> BinClass.Model.Masking.mask_sequence(masking)
-      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
+      |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
 
     # Self-attention Block
     # We project embedded to query, key, value using Dense layers
@@ -80,7 +81,7 @@ defmodule BinClass.Model.Transformer do
     x =
       Axon.add(embedded, attn_output)
       |> Axon.layer_norm()
-      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
+      |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
 
     # Feed-forward network
     ffn_output =
@@ -91,7 +92,7 @@ defmodule BinClass.Model.Transformer do
     x =
       Axon.add(x, ffn_output)
       |> Axon.layer_norm()
-      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 2))
+      |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 2))
 
     # Global Mixed Pooling (Average + Max)
     pooled =
@@ -105,7 +106,7 @@ defmodule BinClass.Model.Transformer do
 
     pooled
     |> Axon.dense(64, activation: :relu)
-    |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 3))
+    |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 3))
     |> Axon.dense(2)
     |> Axon.softmax()
   end

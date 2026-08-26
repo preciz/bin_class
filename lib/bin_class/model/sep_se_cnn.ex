@@ -1,8 +1,9 @@
 defmodule BinClass.Model.SepSeCnn do
   @moduledoc false
+  alias BinClass.Model.Config
 
   def build(vocab_size, opts \\ []) do
-    opts = BinClass.Model.validate_build_options!(vocab_size, opts, branch_filters: 48)
+    opts = Config.validate_options!(vocab_size, opts, branch_filters: 48)
 
     embedding_size = Keyword.fetch!(opts, :embedding_size)
     branch_filters = Keyword.fetch!(opts, :branch_filters)
@@ -16,7 +17,7 @@ defmodule BinClass.Model.SepSeCnn do
       input
       |> Axon.embedding(vocab_size, embedding_size)
       |> BinClass.Model.Masking.mask_sequence(masking)
-      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
+      |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
 
     # Branches for 3, 4, 5-grams
     branches =
@@ -30,7 +31,7 @@ defmodule BinClass.Model.SepSeCnn do
 
     Axon.concatenate(branches, axis: -1)
     |> Axon.dense(64, activation: :relu)
-    |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
+    |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
     |> Axon.dense(2, activation: :softmax)
   end
 

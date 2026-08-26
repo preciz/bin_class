@@ -1,8 +1,9 @@
 defmodule BinClass.Model.Cnn do
   @moduledoc false
+  alias BinClass.Model.Config
 
   def build(vocab_size, opts \\ []) do
-    opts = BinClass.Model.validate_build_options!(vocab_size, opts, conv_filters: 128)
+    opts = Config.validate_options!(vocab_size, opts, conv_filters: 128)
 
     embedding_size = Keyword.fetch!(opts, :embedding_size)
     conv_filters = Keyword.fetch!(opts, :conv_filters)
@@ -16,7 +17,7 @@ defmodule BinClass.Model.Cnn do
       input
       |> Axon.embedding(vocab_size, embedding_size)
       |> BinClass.Model.Masking.mask_sequence(masking)
-      |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
+      |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 0))
       |> Axon.conv(conv_filters, kernel_size: 3, activation: :relu)
 
     features
@@ -24,7 +25,7 @@ defmodule BinClass.Model.Cnn do
       BinClass.Model.Masking.valid_convolution(masking, 3)
     )
     |> Axon.dense(64, activation: :relu)
-    |> Axon.dropout(BinClass.Model.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
+    |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
     |> Axon.dense(2, activation: :softmax)
   end
 end
