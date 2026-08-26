@@ -60,50 +60,7 @@ defmodule BinClass do
   validation setting.
   """
   def serialize(%BinClass.Classifier{} = classifier) do
-    BinClass.Model.validate_name!(classifier.architecture)
-    BinClass.Model.validate_revision!(classifier.model_revision)
-    BinClass.Model.validate_vector_length!(classifier.architecture, classifier.vector_length)
-    BinClass.Labels.validate!(classifier.labels)
-    BinClass.DecisionPolicy.validate!(classifier.decision_policy)
-    dropout_rate = validate_dropout_rate!(classifier.dropout_rate)
-    target_mode = validate_target_mode!(classifier.target_mode)
-    target_threshold = validate_target_threshold!(classifier.target_threshold)
-
-    BinClass.DecisionPolicy.validate_minimum_input_tokens!(
-      classifier.minimum_input_tokens,
-      classifier.vector_length
-    )
-
-    BinClass.Tokenizer.validate_metadata!(classifier.tokenizer, %{
-      vocab_size: classifier.vocab_size,
-      pad_token_id: classifier.pad_token_id,
-      unk_token_id: classifier.unk_token_id
-    })
-
-    # Ensure model params are on Binary backend for safe serialization
-    model_params_binary = Nx.backend_copy(classifier.model_params, Nx.BinaryBackend)
-
-    data = %{
-      tokenizer_json: BinClass.Tokenizer.to_json(classifier.tokenizer),
-      model_params: model_params_binary,
-      vector_length: classifier.vector_length,
-      vocab_size: classifier.vocab_size,
-      pad_token_id: classifier.pad_token_id,
-      unk_token_id: classifier.unk_token_id,
-      labels: classifier.labels,
-      accuracy: classifier.accuracy,
-      epoch: classifier.epoch,
-      architecture: classifier.architecture,
-      model_revision: classifier.model_revision,
-      learning_rate: classifier.learning_rate,
-      dropout_rate: dropout_rate,
-      decision_policy: classifier.decision_policy,
-      minimum_input_tokens: classifier.minimum_input_tokens,
-      target_mode: target_mode,
-      target_threshold: target_threshold
-    }
-
-    :erlang.term_to_binary(data)
+    BinClass.Serialization.serialize(classifier)
   end
 
   @doc """
@@ -175,78 +132,7 @@ defmodule BinClass do
   vocabulary size, padding ID, and unknown-token ID must match the tokenizer JSON.
   """
   def deserialize_classifier(binary) when is_binary(binary) do
-    ensure_serialization_modules_loaded!()
-    data = :erlang.binary_to_term(binary, [:safe])
-
-    architecture =
-      data
-      |> fetch_serialized_field!(:architecture)
-      |> BinClass.Model.validate_name!()
-
-    model_revision =
-      data
-      |> fetch_serialized_field!(:model_revision)
-      |> BinClass.Model.validate_revision!()
-
-    {:ok, tokenizer} =
-      data
-      |> fetch_serialized_field!(:tokenizer_json)
-      |> Tokenizers.Tokenizer.from_buffer()
-
-    tokenizer_metadata = %{
-      vocab_size: fetch_serialized_field!(data, :vocab_size),
-      pad_token_id: fetch_serialized_field!(data, :pad_token_id),
-      unk_token_id: fetch_serialized_field!(data, :unk_token_id)
-    }
-
-    BinClass.Tokenizer.validate_metadata!(tokenizer, tokenizer_metadata)
-
-    vector_length = fetch_serialized_field!(data, :vector_length)
-    BinClass.Model.validate_vector_length!(architecture, vector_length)
-
-    dropout_rate =
-      data
-      |> fetch_serialized_field!(:dropout_rate)
-      |> validate_dropout_rate!()
-
-    target_mode =
-      data
-      |> fetch_serialized_field!(:target_mode)
-      |> validate_target_mode!()
-
-    target_threshold =
-      data
-      |> fetch_serialized_field!(:target_threshold)
-      |> validate_target_threshold!()
-
-    %BinClass.Classifier{
-      tokenizer: tokenizer,
-      model_params: fetch_serialized_field!(data, :model_params),
-      vector_length: vector_length,
-      vocab_size: tokenizer_metadata.vocab_size,
-      pad_token_id: tokenizer_metadata.pad_token_id,
-      unk_token_id: tokenizer_metadata.unk_token_id,
-      labels:
-        data
-        |> fetch_serialized_field!(:labels)
-        |> BinClass.Labels.validate!(),
-      accuracy: fetch_serialized_field!(data, :accuracy),
-      epoch: fetch_serialized_field!(data, :epoch),
-      architecture: architecture,
-      model_revision: model_revision,
-      learning_rate: fetch_serialized_field!(data, :learning_rate),
-      dropout_rate: dropout_rate,
-      decision_policy:
-        data
-        |> fetch_serialized_field!(:decision_policy)
-        |> BinClass.DecisionPolicy.validate!(),
-      minimum_input_tokens:
-        data
-        |> fetch_serialized_field!(:minimum_input_tokens)
-        |> BinClass.DecisionPolicy.validate_minimum_input_tokens!(vector_length),
-      target_mode: target_mode,
-      target_threshold: target_threshold
-    }
+    BinClass.Serialization.deserialize(binary)
   end
 
   @doc """
@@ -317,13 +203,6 @@ defmodule BinClass do
     BinClass.DocumentPredictor.compile(classifier, opts)
   end
 
-  defp fetch_serialized_field!(data, key) do
-    case Map.fetch(data, key) do
-      {:ok, value} -> value
-      :error -> raise ArgumentError, "Serialized classifier is missing #{inspect(key)}"
-    end
-  end
-
   defp validate_dropout_rate!(dropout_rate)
        when is_number(dropout_rate) and dropout_rate >= 0 and dropout_rate < 1,
        do: dropout_rate
@@ -332,23 +211,6 @@ defmodule BinClass do
     raise ArgumentError,
           "Classifier :dropout_rate must be a number greater than or equal to 0 and below 1, " <>
             "got: #{inspect(dropout_rate)}"
-  end
-
-  defp validate_target_mode!(target_mode) when target_mode in [:hard, :soft], do: target_mode
-
-  defp validate_target_mode!(target_mode) do
-    raise ArgumentError,
-          "Classifier :target_mode must be :hard or :soft, got: #{inspect(target_mode)}"
-  end
-
-  defp validate_target_threshold!(target_threshold)
-       when is_number(target_threshold) and target_threshold >= 0 and target_threshold <= 1,
-       do: target_threshold
-
-  defp validate_target_threshold!(target_threshold) do
-    raise ArgumentError,
-          "Classifier :target_threshold must be a number between 0 and 1, " <>
-            "got: #{inspect(target_threshold)}"
   end
 
   defp validate_serving_options!(opts) do
@@ -367,20 +229,5 @@ defmodule BinClass do
     |> BinClass.Options.validate_keyword_list!(:defn_options)
 
     opts
-  end
-
-  defp ensure_serialization_modules_loaded! do
-    Enum.each(
-      [
-        BinClass.Model,
-        BinClass.DecisionPolicy,
-        BinClass.Trainer,
-        Nx.Tensor,
-        Nx.BinaryBackend,
-        Nx.Type,
-        Axon.ModelState
-      ],
-      &Code.ensure_loaded!/1
-    )
   end
 end
