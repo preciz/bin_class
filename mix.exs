@@ -39,7 +39,8 @@ defmodule BinClass.MixProject do
       {:nx, "~> 0.13.1"},
       {:tokenizers, "~> 0.5"},
       {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.40", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
+      {:stream_data, "~> 1.4.0", only: :test, runtime: false}
     ]
   end
 
