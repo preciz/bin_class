@@ -27,14 +27,17 @@ defmodule BinClass.Model.MultiScaleCnn do
       embedded
       |> Axon.conv(branch_filters, kernel_size: 5, activation: :relu)
 
+    conv3_masking = BinClass.Model.Masking.valid_convolution(masking, 3)
+    conv5_masking = BinClass.Model.Masking.valid_convolution(masking, 5)
+
     # Mixed Pooling on both branches
     # This captures both the "strongest signal" (Max) and "average signal" (Avg)
     # for both short phrases (3-gram) and longer idioms (5-gram)
     features = [
-      BinClass.Model.Masking.masked_global_max(conv3, masking),
-      BinClass.Model.Masking.masked_global_avg(conv3, masking),
-      BinClass.Model.Masking.masked_global_max(conv5, masking),
-      BinClass.Model.Masking.masked_global_avg(conv5, masking)
+      BinClass.Model.Masking.masked_global_max(conv3, conv3_masking),
+      BinClass.Model.Masking.masked_global_avg(conv3, conv3_masking),
+      BinClass.Model.Masking.masked_global_max(conv5, conv5_masking),
+      BinClass.Model.Masking.masked_global_avg(conv5, conv5_masking)
     ]
 
     Axon.concatenate(features, axis: -1)

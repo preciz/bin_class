@@ -60,6 +60,9 @@ defmodule BinClass.DocumentPredictorTest do
 
       assert chunk.token_count > 0
       assert chunk.token_count <= 8
+      assert chunk.active_token_count > 0
+      assert chunk.active_token_count <= chunk.token_count
+      assert chunk.prediction.active_token_count == chunk.active_token_count
 
       assert %{
                label: label,
@@ -115,6 +118,18 @@ defmodule BinClass.DocumentPredictorTest do
                chunk.prediction.confidence == nil and
                chunk.prediction.probabilities != %{}
            end)
+  end
+
+  test "literal padding tokens cannot satisfy document minimum input", %{
+    classifier: classifier
+  } do
+    classifier = %{classifier | minimum_input_tokens: 1}
+    predict = BinClass.compile_document_predictor(classifier, chunk_size: 8)
+
+    assert %{status: :insufficient_input, chunks: [_ | _] = chunks} =
+             predict.("[PAD] [PAD]")
+
+    assert Enum.all?(chunks, &(&1.prediction.label == :insufficient_input))
   end
 
   test "returns no chunks for empty content and accepts only one document", %{

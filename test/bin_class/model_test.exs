@@ -167,7 +167,7 @@ defmodule BinClass.ModelTest do
     end
   end
 
-  test "all architectures ignore the amount of right-padding" do
+  test "all architectures ignore right-padding, including after exact-width input" do
     pad_token_id = 3
     active_ids = [11, 0, 13, 14, 15, 16, 17, 18]
 
@@ -191,8 +191,13 @@ defmodule BinClass.ModelTest do
       {init_fn, predict_fn} = Axon.build(model, seed: 42)
       params = init_fn.(input.(128), Axon.ModelState.empty())
 
+      exact_prediction = predict_fn.(params, input.(length(active_ids)))
       short_prediction = predict_fn.(params, input.(16))
       long_prediction = predict_fn.(params, input.(128))
+
+      assert Nx.all_close(exact_prediction, short_prediction, atol: 1.0e-6, rtol: 1.0e-6)
+             |> Nx.to_number() == 1,
+             "#{inspect(architecture)} changed its prediction when padding was first added"
 
       assert Nx.all_close(short_prediction, long_prediction, atol: 1.0e-6, rtol: 1.0e-6)
              |> Nx.to_number() == 1,
@@ -208,6 +213,39 @@ defmodule BinClass.ModelTest do
 
       assert Nx.all_close(Nx.sum(fully_padded_prediction), Nx.tensor(1.0))
              |> Nx.to_number() == 1
+    end
+  end
+
+  test "all architectures preserve exact padding holes when more right-padding is added" do
+    pad_token_id = 3
+    token_ids = [11, 12, 13, pad_token_id, 15, 16, 17, 18]
+
+    input = fn vector_length ->
+      [token_ids ++ List.duplicate(pad_token_id, vector_length - length(token_ids))]
+      |> Nx.tensor(type: :u16)
+    end
+
+    for architecture <- Model.architectures() do
+      model =
+        Model.build(architecture, 100,
+          dropout_rate: 0.0,
+          pad_token_id: pad_token_id,
+          embedding_size: 16,
+          conv_filters: 16,
+          branch_filters: 8,
+          ff_dim: 32,
+          seed: 1234
+        )
+
+      {init_fn, predict_fn} = Axon.build(model, seed: 42)
+      params = init_fn.(input.(128), Axon.ModelState.empty())
+
+      exact_prediction = predict_fn.(params, input.(length(token_ids)))
+      padded_prediction = predict_fn.(params, input.(128))
+
+      assert Nx.all_close(exact_prediction, padded_prediction, atol: 1.0e-6, rtol: 1.0e-6)
+             |> Nx.to_number() == 1,
+             "#{inspect(architecture)} reconstructed a padding hole as an active position"
     end
   end
 

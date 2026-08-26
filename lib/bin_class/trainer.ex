@@ -193,6 +193,7 @@ defmodule BinClass.Trainer do
       unk_token_id: tokenizer_metadata.unk_token_id,
       labels: labels,
       architecture: architecture,
+      model_revision: Model.revision(),
       learning_rate: learning_rate,
       dropout_rate: dropout_rate,
       decision_policy: best_checkpoint.decision_policy,
@@ -521,8 +522,7 @@ defmodule BinClass.Trainer do
 
   defp eligible_inputs(inputs, pad_token_id, minimum_input_tokens) do
     inputs
-    |> Nx.not_equal(pad_token_id)
-    |> Nx.sum(axes: [-1])
+    |> BinClass.Padding.active_token_counts(pad_token_id)
     |> Nx.greater_equal(minimum_input_tokens)
   end
 
@@ -746,8 +746,7 @@ defmodule BinClass.Trainer do
 
       eligible =
         inputs
-        |> Nx.not_equal(pad_token_id)
-        |> Nx.sum(axes: [1])
+        |> BinClass.Padding.active_token_counts(pad_token_id)
         |> Nx.greater_equal(minimum_input_tokens)
 
       true_labels = target_labels(labels, target_mode, target_threshold)

@@ -11,6 +11,10 @@ defmodule BinClass.Classifier do
   were used during training and how soft targets were binarized for metrics.
   They do not change inference behavior.
 
+  `:model_revision` identifies the exact graph semantics used for training.
+  It prevents classifiers trained with older masking behavior from silently
+  running against a different graph.
+
   `:vocab_size`, `:pad_token_id`, and `:unk_token_id` are derived from the
   trained tokenizer and validated when the classifier is serialized or loaded.
   Persisted output labels are exactly two distinct binaries.
@@ -33,7 +37,8 @@ defmodule BinClass.Classifier do
     :decision_policy,
     :minimum_input_tokens,
     :target_mode,
-    :target_threshold
+    :target_threshold,
+    model_revision: BinClass.Model.revision()
   ]
 
   defimpl Inspect do
@@ -45,6 +50,7 @@ defmodule BinClass.Classifier do
         to_doc(
           %{
             architecture: classifier.architecture,
+            model_revision: classifier.model_revision,
             labels: classifier.labels,
             vector_length: classifier.vector_length,
             vocab_size: classifier.vocab_size,

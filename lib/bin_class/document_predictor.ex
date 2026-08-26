@@ -40,6 +40,7 @@ defmodule BinClass.DocumentPredictor do
               start_byte: chunk.start_byte,
               end_byte: chunk.end_byte,
               token_count: chunk.token_count,
+              active_token_count: prediction.active_token_count,
               prediction: prediction
             }
           end)

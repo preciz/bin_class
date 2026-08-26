@@ -142,7 +142,9 @@ defmodule BinClassTest do
     loaded = BinClass.deserialize_classifier(binary)
 
     assert serialized_data.architecture == :cnn
+    assert serialized_data.model_revision == BinClass.Model.revision()
     assert loaded.architecture == :cnn
+    assert loaded.model_revision == BinClass.Model.revision()
     assert loaded.target_mode == :soft
     assert loaded.target_threshold == 0.6
     assert loaded.decision_policy == %{strategy: :argmax}
@@ -150,6 +152,40 @@ defmodule BinClassTest do
     assert loaded.vocab_size == metadata.vocab_size
     assert loaded.pad_token_id == metadata.pad_token_id
     assert loaded.unk_token_id == metadata.unk_token_id
+  end
+
+  test "deserialization rejects missing or incompatible model revisions" do
+    tokenizer = BinClass.Tokenizer.train(["hello world"])
+    metadata = BinClass.Tokenizer.metadata(tokenizer)
+
+    classifier = %BinClass.Classifier{
+      tokenizer: tokenizer,
+      model_params: Nx.tensor([0.1, 0.2], type: :f32),
+      vector_length: 10,
+      vocab_size: metadata.vocab_size,
+      pad_token_id: metadata.pad_token_id,
+      unk_token_id: metadata.unk_token_id,
+      labels: ["0", "1"],
+      architecture: :cnn,
+      decision_policy: %{strategy: :argmax},
+      minimum_input_tokens: 0
+    }
+
+    serialized = classifier |> BinClass.serialize() |> :erlang.binary_to_term()
+
+    assert_raise ArgumentError, "Serialized classifier is missing :model_revision", fn ->
+      serialized
+      |> Map.delete(:model_revision)
+      |> :erlang.term_to_binary()
+      |> BinClass.deserialize_classifier()
+    end
+
+    assert_raise ArgumentError, ~r/model revision 0 is incompatible/, fn ->
+      serialized
+      |> Map.put(:model_revision, 0)
+      |> :erlang.term_to_binary()
+      |> BinClass.deserialize_classifier()
+    end
   end
 
   test "deserialization rejects tokenizer metadata inconsistent with its JSON" do
@@ -196,7 +232,8 @@ defmodule BinClassTest do
       vocab_size: metadata.vocab_size,
       unk_token_id: metadata.unk_token_id,
       labels: ["0", "1"],
-      architecture: :cnn
+      architecture: :cnn,
+      model_revision: BinClass.Model.revision()
     }
 
     assert_raise ArgumentError, "Serialized classifier is missing :pad_token_id", fn ->
@@ -275,6 +312,19 @@ defmodule BinClassTest do
 
     assert Nx.Serving.run(threshold_serving, "short").label == "1"
     assert threshold_predictor.("short").label == "1"
+
+    padding_classifier = %{threshold_classifier | minimum_input_tokens: 1}
+    padding_serving = BinClass.serving(padding_classifier, batch_size: 2)
+    padding_predictor = BinClass.compile_predictor(padding_classifier, batch_size: 2)
+
+    assert %{label: :insufficient_input, active_token_count: 0} =
+             Nx.Serving.run(padding_serving, "[PAD] [PAD]")
+
+    assert %{label: :insufficient_input, active_token_count: 0} =
+             padding_predictor.("[PAD] [PAD]")
+
+    assert Nx.Serving.run(padding_serving, "☃").label == "1"
+    assert padding_predictor.("☃").label == "1"
 
     insufficient_classifier = %{threshold_classifier | minimum_input_tokens: 16}
 

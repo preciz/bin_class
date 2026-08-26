@@ -1,23 +1,27 @@
 defmodule BinClass.Model.Masking do
   @moduledoc false
 
-  defstruct [:token_mask, :active_lengths]
+  defstruct [:token_mask]
 
   def new(token_ids, pad_token_id) do
     token_mask =
-      Axon.layer(fn token_ids, _opts -> Nx.not_equal(token_ids, pad_token_id) end, [token_ids])
-
-    active_lengths =
       Axon.layer(
-        fn token_mask, _opts ->
-          token_mask
-          |> Nx.sum(axes: [-1], keep_axes: true)
-          |> Nx.as_type(:f32)
-        end,
+        fn token_ids, _opts -> BinClass.Padding.active_token_mask(token_ids, pad_token_id) end,
+        [token_ids]
+      )
+
+    %__MODULE__{token_mask: token_mask}
+  end
+
+  def valid_convolution(%__MODULE__{token_mask: token_mask}, kernel_size)
+      when is_integer(kernel_size) and kernel_size > 0 do
+    convolved_mask =
+      Axon.layer(
+        fn token_mask, _opts -> valid_convolution_mask(token_mask, kernel_size) end,
         [token_mask]
       )
 
-    %__MODULE__{token_mask: token_mask, active_lengths: active_lengths}
+    %__MODULE__{token_mask: convolved_mask}
   end
 
   def mask_sequence(sequence, %__MODULE__{token_mask: token_mask}) do
@@ -35,10 +39,10 @@ defmodule BinClass.Model.Masking do
     )
   end
 
-  def masked_global_max(sequence, %__MODULE__{active_lengths: active_lengths}) do
+  def masked_global_max(sequence, %__MODULE__{token_mask: token_mask}) do
     Axon.layer(
-      fn sequence, active_lengths, _opts ->
-        {mask, active?} = sequence_mask(sequence, active_lengths)
+      fn sequence, token_mask, _opts ->
+        mask = feature_mask(token_mask, sequence)
         minimum = Nx.broadcast(-1.0e30, Nx.shape(sequence))
 
         pooled =
@@ -46,10 +50,15 @@ defmodule BinClass.Model.Masking do
           |> Nx.select(sequence, minimum)
           |> Nx.reduce_max(axes: [1])
 
+        active? =
+          token_mask
+          |> Nx.any(axes: [1], keep_axes: true)
+          |> Nx.broadcast(Nx.shape(pooled))
+
         zeros = Nx.broadcast(0, Nx.shape(pooled)) |> Nx.as_type(Nx.type(pooled))
         Nx.select(active?, pooled, zeros)
       end,
-      [sequence, active_lengths]
+      [sequence, token_mask]
     )
   end
 
@@ -57,14 +66,14 @@ defmodule BinClass.Model.Masking do
 
   def masked_global_avg(
         sequence,
-        %__MODULE__{active_lengths: active_lengths},
+        %__MODULE__{token_mask: token_mask},
         opts
       ) do
     keep_axes? = Keyword.get(opts, :keep_axes, false)
 
     Axon.layer(
-      fn sequence, active_lengths, _opts ->
-        {mask, _active?} = sequence_mask(sequence, active_lengths)
+      fn sequence, token_mask, _opts ->
+        mask = feature_mask(token_mask, sequence)
         mask = Nx.as_type(mask, Nx.type(sequence))
 
         sums =
@@ -79,7 +88,7 @@ defmodule BinClass.Model.Masking do
 
         Nx.divide(sums, counts)
       end,
-      [sequence, active_lengths]
+      [sequence, token_mask]
     )
   end
 
@@ -98,24 +107,21 @@ defmodule BinClass.Model.Masking do
     )
   end
 
-  defp sequence_mask(sequence, active_lengths) do
-    batch_size = Nx.axis_size(sequence, 0)
-    sequence_length = Nx.axis_size(sequence, 1)
+  defp feature_mask(token_mask, sequence) do
+    token_mask
+    |> Nx.new_axis(-1)
+    |> Nx.broadcast(Nx.shape(sequence))
+  end
 
-    active_lengths = Nx.min(active_lengths, sequence_length)
+  defp valid_convolution_mask(token_mask, 1), do: token_mask
 
-    positions = Nx.iota({1, sequence_length, 1})
+  defp valid_convolution_mask(token_mask, kernel_size) do
+    output_length = Nx.axis_size(token_mask, 1) - kernel_size + 1
+    first = Nx.slice_along_axis(token_mask, 0, output_length, axis: 1)
 
-    mask =
-      positions
-      |> Nx.less(Nx.reshape(active_lengths, {batch_size, 1, 1}))
-      |> Nx.broadcast(Nx.shape(sequence))
-
-    active? =
-      active_lengths
-      |> Nx.greater(0)
-      |> Nx.broadcast({batch_size, Nx.axis_size(sequence, 2)})
-
-    {mask, active?}
+    Enum.reduce(1..(kernel_size - 1), first, fn offset, mask ->
+      window = Nx.slice_along_axis(token_mask, offset, output_length, axis: 1)
+      Nx.logical_and(mask, window)
+    end)
   end
 end

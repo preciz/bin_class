@@ -108,8 +108,10 @@ classifier = BinClass.Trainer.train(data,
 
 An input below the minimum returns `label: :insufficient_input` and
 `confidence: nil`. Its raw class probabilities remain available in the
-`:probabilities` map. Such inputs are excluded from threshold optimization and
-the classifier's reported validation accuracy.
+`:probabilities` map. Every result also reports `:active_token_count`, defined
+as the number of truncated token IDs other than the tokenizer's padding ID.
+Literal `[PAD]` tokens therefore cannot satisfy the minimum. Ineligible inputs
+are excluded from threshold optimization and reported validation accuracy.
 
 ### Evaluation and calibration
 
@@ -217,6 +219,7 @@ Enum.each(chunks, fn chunk ->
     chunk.start_byte,
     chunk.end_byte,
     chunk.token_count,
+    chunk.active_token_count,
     chunk.prediction.probabilities
   })
 end)
@@ -224,8 +227,10 @@ end)
 
 The predictor accepts one document at a time. It does not normalize, truncate,
 aggregate, or apply a separate document-level decision. Byte offsets refer to
-the exact input string, with an inclusive start and exclusive end. Individual
-chunks that fail minimum-token validation retain their raw probabilities.
+the exact input string, with an inclusive start and exclusive end. A chunk's
+`:token_count` is its encoded size, while `:active_token_count` excludes padding
+special tokens and controls minimum-input validation. Individual chunks that
+fail validation retain their raw probabilities.
 
 ## Examples
 

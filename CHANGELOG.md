@@ -38,6 +38,9 @@ All notable changes to this project are documented in this file.
 - Threshold optimization excludes inputs that fail minimum-token validation
   and requires eligible validation examples from both classes.
 - Removed the model-side short-input negative bias from the Transformer graph.
+- Classifier artifacts now contain a required model-graph revision. Artifacts
+  without the revision predate the exact padding semantics and must be
+  retrained rather than silently running against a different graph.
 - Training accepts an optional seed for deterministic data ordering, model
   initialization, and dropout state.
 - Threshold calibration now computes validation predictions once and reuses
@@ -92,6 +95,13 @@ All notable changes to this project are documented in this file.
   different amount of right-padding.
 - Padding no longer uses the unknown-token ID, so unknown tokens remain model
   input and count toward minimum-input validation.
+- Active-token counting now uses the exact non-padding token IDs consistently
+  in training, serving, compiled prediction, and document prediction. Literal
+  `[PAD]` input can no longer bypass minimum-token validation.
+- Global pooling now uses exact token masks, preserving internal padding holes.
+  Valid-convolution architectures propagate kernel-specific masks so outputs
+  whose receptive fields include padding cannot affect predictions.
+- Prediction and document-chunk results now expose `:active_token_count`.
 
 ## [0.3.0] - 2026-08-24
 

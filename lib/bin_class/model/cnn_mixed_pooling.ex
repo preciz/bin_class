@@ -18,11 +18,13 @@ defmodule BinClass.Model.CnnMixedPooling do
       |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 0))
       |> Axon.conv(conv_filters, kernel_size: 3, activation: :relu)
 
+    convolution_masking = BinClass.Model.Masking.valid_convolution(masking, 3)
+
     # Global Average Pooling
-    avg_pool = BinClass.Model.Masking.masked_global_avg(x, masking)
+    avg_pool = BinClass.Model.Masking.masked_global_avg(x, convolution_masking)
 
     # Global Max Pooling
-    max_pool = BinClass.Model.Masking.masked_global_max(x, masking)
+    max_pool = BinClass.Model.Masking.masked_global_max(x, convolution_masking)
 
     Axon.concatenate([avg_pool, max_pool], axis: -1)
     |> Axon.dense(64, activation: :relu)

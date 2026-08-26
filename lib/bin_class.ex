@@ -30,7 +30,7 @@ defmodule BinClass do
       serving = BinClass.load("model.bin", compiler: EXLA)
 
       result = Nx.Serving.run(serving, "Some text to classify")
-      # result is %{label: "positive", confidence: 0.99, ...}
+      # result is %{label: "positive", confidence: 0.99, active_token_count: 4, ...}
 
   ### Ultra-Low Latency Inference
 
@@ -55,11 +55,13 @@ defmodule BinClass do
 
   The serialized data includes tokenizer state, its exact vocabulary and
   special-token IDs, model parameters, labels, vector length, named model
-  architecture, training metadata (including target mode and threshold), and
-  the explicit decision policy and minimum-input validation setting.
+  architecture and graph revision, training metadata (including target mode
+  and threshold), and the explicit decision policy and minimum-input
+  validation setting.
   """
   def serialize(%BinClass.Classifier{} = classifier) do
     BinClass.Model.validate_name!(classifier.architecture)
+    BinClass.Model.validate_revision!(classifier.model_revision)
     BinClass.Model.validate_vector_length!(classifier.architecture, classifier.vector_length)
     BinClass.Labels.validate!(classifier.labels)
     BinClass.DecisionPolicy.validate!(classifier.decision_policy)
@@ -89,6 +91,7 @@ defmodule BinClass do
       accuracy: classifier.accuracy,
       epoch: classifier.epoch,
       architecture: classifier.architecture,
+      model_revision: classifier.model_revision,
       learning_rate: classifier.learning_rate,
       dropout_rate: classifier.dropout_rate,
       decision_policy: classifier.decision_policy,
@@ -148,6 +151,8 @@ defmodule BinClass do
         minimum_input_tokens: classifier.minimum_input_tokens
       )
 
+    BinClass.Model.validate_revision!(classifier.model_revision)
+
     BinClass.Serving.new(classifier.model_params, classifier.tokenizer, serving_opts)
   end
 
@@ -174,6 +179,11 @@ defmodule BinClass do
       data
       |> fetch_serialized_field!(:architecture)
       |> BinClass.Model.validate_name!()
+
+    model_revision =
+      data
+      |> fetch_serialized_field!(:model_revision)
+      |> BinClass.Model.validate_revision!()
 
     {:ok, tokenizer} =
       data
@@ -205,6 +215,7 @@ defmodule BinClass do
       accuracy: fetch_serialized_field!(data, :accuracy),
       epoch: fetch_serialized_field!(data, :epoch),
       architecture: architecture,
+      model_revision: model_revision,
       learning_rate: fetch_serialized_field!(data, :learning_rate),
       dropout_rate: fetch_serialized_field!(data, :dropout_rate),
       decision_policy:
@@ -230,7 +241,9 @@ defmodule BinClass do
   Returns an anonymous function that takes a text (string) or list of texts
   and returns the classification results. Inputs below the classifier's
   `minimum_input_tokens` return `label: :insufficient_input` and
-  `confidence: nil`, while retaining raw class probabilities.
+  `confidence: nil`, while retaining raw class probabilities. Every result
+  includes `:active_token_count`, defined consistently as the number of
+  truncated token IDs that are not the tokenizer's padding ID.
 
   ## Options
 
@@ -260,6 +273,7 @@ defmodule BinClass do
 
     BinClass.DecisionPolicy.validate!(decision_policy)
     BinClass.Labels.validate!(labels)
+    BinClass.Model.validate_revision!(classifier.model_revision)
     BinClass.Model.validate_vector_length!(architecture, vector_length)
 
     BinClass.DecisionPolicy.validate_minimum_input_tokens!(
@@ -287,9 +301,9 @@ defmodule BinClass do
       BinClass.Vectorizer.build(tokenizer, "", vector_length, pad_token_id)
 
     predict_batch = fn texts ->
-      {vectors, active_lengths} =
+      {vectors, active_token_counts} =
         Enum.map(texts, fn text ->
-          BinClass.Vectorizer.build_with_length(
+          BinClass.Vectorizer.build_with_active_token_count(
             tokenizer,
             text,
             vector_length,
@@ -307,13 +321,13 @@ defmodule BinClass do
       |> Nx.backend_transfer(Nx.BinaryBackend)
       |> Nx.to_list()
       |> Enum.take(length(texts))
-      |> Enum.zip(active_lengths)
-      |> Enum.map(fn {probs, active_length} ->
+      |> Enum.zip(active_token_counts)
+      |> Enum.map(fn {probs, active_token_count} ->
         BinClass.Serving.decode_prediction(
           probs,
           labels,
           decision_policy,
-          active_length,
+          active_token_count,
           minimum_input_tokens
         )
       end)
@@ -337,8 +351,8 @@ defmodule BinClass do
 
   The returned function accepts exactly one string. It splits the entire input
   into overlapping token windows, predicts every chunk in batches, and returns
-  each chunk's text, zero-based index, token count, original start/end byte
-  offsets, and raw classification result.
+  each chunk's text, zero-based index, encoded token count, active-token count,
+  original start/end byte offsets, and raw classification result.
 
   No text is normalized or truncated. `:start_byte` is inclusive and
   `:end_byte` is exclusive, and both refer to the exact string passed to the
@@ -347,8 +361,10 @@ defmodule BinClass do
 
   The document status is `:ok` when at least one chunk passes the classifier's
   `minimum_input_tokens` validation. Individual insufficient chunks remain in
-  the output with their raw probabilities. This function does not aggregate
-  chunks or apply a document-level decision policy.
+  the output with their raw probabilities. A chunk's `:token_count` includes
+  encoded padding special tokens present in the source; `:active_token_count`
+  excludes them and is the value used for minimum-input validation. This
+  function does not aggregate chunks or apply a document-level decision policy.
 
   ## Options
 

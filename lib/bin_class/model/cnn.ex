@@ -10,12 +10,17 @@ defmodule BinClass.Model.Cnn do
     input = Axon.input("input")
     masking = BinClass.Model.Masking.new(input, pad_token_id)
 
-    input
-    |> Axon.embedding(vocab_size, embedding_size)
-    |> BinClass.Model.Masking.mask_sequence(masking)
-    |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 0))
-    |> Axon.conv(conv_filters, kernel_size: 3, activation: :relu)
-    |> BinClass.Model.Masking.masked_global_max(masking)
+    features =
+      input
+      |> Axon.embedding(vocab_size, embedding_size)
+      |> BinClass.Model.Masking.mask_sequence(masking)
+      |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 0))
+      |> Axon.conv(conv_filters, kernel_size: 3, activation: :relu)
+
+    features
+    |> BinClass.Model.Masking.masked_global_max(
+      BinClass.Model.Masking.valid_convolution(masking, 3)
+    )
     |> Axon.dense(64, activation: :relu)
     |> Axon.dropout(BinClass.Model.dropout_options(opts, dropout_rate, 1))
     |> Axon.dense(2, activation: :softmax)

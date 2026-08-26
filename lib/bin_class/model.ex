@@ -22,6 +22,8 @@ defmodule BinClass.Model do
     :transformer
   ]
 
+  @revision 1
+
   @minimum_vector_lengths %{
     cnn: 3,
     cnn_mixed_pooling: 3,
@@ -35,6 +37,18 @@ defmodule BinClass.Model do
   Returns the supported architecture names.
   """
   def architectures, do: @architectures
+
+  @doc false
+  def revision, do: @revision
+
+  @doc false
+  def validate_revision!(@revision), do: @revision
+
+  def validate_revision!(revision) do
+    raise ArgumentError,
+          "classifier model revision #{inspect(revision)} is incompatible with revision " <>
+            "#{@revision}; retrain the classifier with this BinClass version"
+  end
 
   @doc false
   def validate_name!(name) when name in @architectures, do: name

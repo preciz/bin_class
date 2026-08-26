@@ -62,9 +62,16 @@ defmodule BinClass.Serving do
     |> Nx.Serving.client_preprocessing(fn input ->
       {texts, multi?} = validate_input(input)
 
-      {vectors, active_lengths} =
+      {vectors, active_token_counts} =
         texts
-        |> Enum.map(&Vectorizer.build_with_length(tokenizer, &1, vector_length, pad_token_id))
+        |> Enum.map(
+          &Vectorizer.build_with_active_token_count(
+            tokenizer,
+            &1,
+            vector_length,
+            pad_token_id
+          )
+        )
         |> Enum.unzip()
 
       batch =
@@ -72,17 +79,17 @@ defmodule BinClass.Serving do
         |> Enum.map(&Nx.tensor(&1, type: :u16))
         |> Nx.Batch.stack()
 
-      {batch, {multi?, active_lengths}}
+      {batch, {multi?, active_token_counts}}
     end)
     |> Nx.Serving.client_postprocessing(fn {batch_output, _server_info},
-                                           {multi?, active_lengths} ->
+                                           {multi?, active_token_counts} ->
       # batch_output is [batch_size, 2]
       results =
         batch_output
         |> Nx.to_list()
-        |> Enum.zip(active_lengths)
-        |> Enum.map(fn {probs, active_length} ->
-          decode_prediction(probs, labels, policy, active_length, minimum_input_tokens)
+        |> Enum.zip(active_token_counts)
+        |> Enum.map(fn {probs, active_token_count} ->
+          decode_prediction(probs, labels, policy, active_token_count, minimum_input_tokens)
         end)
 
       if multi?, do: results, else: List.first(results)
@@ -94,17 +101,20 @@ defmodule BinClass.Serving do
   def validate_input(input), do: {[input], false}
 
   @doc false
-  def decode_prediction(probs, labels, policy, active_length, minimum_input_tokens) do
-    if active_length < minimum_input_tokens do
-      %{
-        label: :insufficient_input,
-        confidence: nil,
-        probabilities: build_probabilities(probs, labels)
-      }
-    else
-      max_index = DecisionPolicy.class_index(probs, policy)
-      build_prediction(probs, labels, max_index, Enum.at(probs, max_index))
-    end
+  def decode_prediction(probs, labels, policy, active_token_count, minimum_input_tokens) do
+    prediction =
+      if active_token_count < minimum_input_tokens do
+        %{
+          label: :insufficient_input,
+          confidence: nil,
+          probabilities: build_probabilities(probs, labels)
+        }
+      else
+        max_index = DecisionPolicy.class_index(probs, policy)
+        build_prediction(probs, labels, max_index, Enum.at(probs, max_index))
+      end
+
+    Map.put(prediction, :active_token_count, active_token_count)
   end
 
   defp build_prediction(probs, labels, max_index, max_prob) do

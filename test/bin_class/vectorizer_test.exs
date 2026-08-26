@@ -41,11 +41,11 @@ defmodule BinClass.VectorizerTest do
     {:ok, raw_encoding} = Tokenizers.Tokenizer.encode(tokenizer, "hello ☃")
     raw_ids = Tokenizers.Encoding.get_ids(raw_encoding)
 
-    {ids, active_length} =
-      Vectorizer.build_with_length(tokenizer, "hello ☃", 8, metadata.pad_token_id)
+    {ids, active_token_count} =
+      Vectorizer.build_with_active_token_count(tokenizer, "hello ☃", 8, metadata.pad_token_id)
 
     assert metadata.unk_token_id in raw_ids
-    assert active_length == length(raw_ids)
+    assert active_token_count == length(raw_ids)
     assert Enum.take(ids, length(raw_ids)) == raw_ids
 
     assert Enum.drop(ids, length(raw_ids)) ==
@@ -54,9 +54,9 @@ defmodule BinClass.VectorizerTest do
     assert Enum.count(ids, &(&1 != metadata.pad_token_id)) == length(raw_ids)
   end
 
-  test "reports the truncated active length", %{tokenizer: tokenizer, metadata: metadata} do
-    {ids, active_length} =
-      Vectorizer.build_with_length(
+  test "reports the truncated active-token count", %{tokenizer: tokenizer, metadata: metadata} do
+    {ids, active_token_count} =
+      Vectorizer.build_with_active_token_count(
         tokenizer,
         "hello world this is a test another example",
         2,
@@ -64,6 +64,22 @@ defmodule BinClass.VectorizerTest do
       )
 
     assert length(ids) == 2
-    assert active_length == 2
+    assert active_token_count == 2
+  end
+
+  test "does not count literal padding tokens as active", %{
+    tokenizer: tokenizer,
+    metadata: metadata
+  } do
+    {ids, active_token_count} =
+      Vectorizer.build_with_active_token_count(
+        tokenizer,
+        "[PAD] hello [PAD]",
+        8,
+        metadata.pad_token_id
+      )
+
+    assert active_token_count == 1
+    assert Enum.count(ids, &(&1 != metadata.pad_token_id)) == 1
   end
 end

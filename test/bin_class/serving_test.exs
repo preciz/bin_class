@@ -124,7 +124,7 @@ defmodule BinClass.ServingTest do
         minimum_input_tokens: 64
       )
 
-    assert %{label: "positive"} = Nx.Serving.run(serving, text)
+    assert %{label: "positive", active_token_count: 64} = Nx.Serving.run(serving, text)
   end
 
   test "decision policy and minimum input validation are architecture-independent" do
