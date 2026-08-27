@@ -1,10 +1,10 @@
 defmodule BinClass do
   @moduledoc """
-  A reusable library for building, training, and using binary classifiers using Axon.
+  A high-level library for training, evaluating, and serving binary text classifiers with Axon.
 
   ## Usage
 
-  ### Training
+  ### 1. Dataset Inspection & Splitting
 
       data = [
         %{text: "This is a positive text", label: 1},
@@ -12,32 +12,38 @@ defmodule BinClass do
         # ... more data
       ]
 
-      # Use a map for explicit label mapping
-      classifier = BinClass.train(data,
+      # Inspect dataset balance and text statistics:
+      summary = BinClass.summary(data)
+      IO.puts(BinClass.format_summary(summary))
+
+      # Stratified train / validation split:
+      {train_data, val_data} = BinClass.Dataset.split(data, validation_split: 0.1, seed: 42)
+
+  ### 2. Training
+
+      classifier = BinClass.train(train_data,
         epochs: 5,
-        labels: %{0 => "negative", 1 => "positive"}
+        labels: %{0 => "negative", 1 => "positive"},
+        label_smoothing: 0.02
       )
 
-      # Prediction uses argmax unless an explicit decision policy was selected
-      # during training.
+  ### 3. Evaluation
 
-      # Save the model
+      result = BinClass.evaluate(classifier, val_data)
+      IO.puts(BinClass.format_report(result))
+
+  ### 4. Serialization
+
       BinClass.save(classifier, "model.bin")
 
-  ### Prediction
+  ### 5. Prediction & Serving
 
-      # Load the model as a serving (supports custom compiler/defn_options)
+      # Load model as Nx.Serving for concurrent web applications:
       serving = BinClass.load("model.bin", compiler: EXLA)
-
       result = Nx.Serving.run(serving, "Some text to classify")
-      # result is %{label: "positive", confidence: 0.99, active_token_count: 4, ...}
 
-  ### Ultra-Low Latency Inference
-
-      # Load raw classifier and compile a predictor function
-      classifier = BinClass.load_classifier("model.bin")
+      # Or compile an ultra-low latency direct predictor function:
       predict = BinClass.compile_predictor(classifier)
-
       result = predict.("Instant prediction")
 
   """
