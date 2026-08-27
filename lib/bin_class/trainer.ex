@@ -47,6 +47,9 @@ defmodule BinClass.Trainer do
       `:insufficient_input` at inference. Defaults to `0`.
     * `:vector_length` - Positive fixed sequence length satisfying the architecture's minimum.
       Defaults to `512`.
+    * `:vocab_size` - Positive maximum vocabulary size for tokenizer training. Defaults to `30_000`.
+    * `:normalizer` - Text normalizer to apply before tokenization. Accepts `:nfkc_lowercase`
+      (default), `:nfkc`, `:lowercase`, `:none`, `nil`, or a `Tokenizers.Normalizer` struct.
     * `:seed` - Optional integer seed for deterministic partition ordering, model initialization,
       and dropout. Defaults to nondeterministic training.
   """
@@ -54,7 +57,13 @@ defmodule BinClass.Trainer do
     config = Config.new!(opts)
     data = Dataset.prepare!(data_stream, config)
 
-    tokenizer = Tokenizer.train(Stream.map(data, & &1.text))
+    tokenizer =
+      Tokenizer.train(
+        Stream.map(data, & &1.text),
+        vocab_size: config.vocab_size,
+        normalizer: config.normalizer
+      )
+
     tokenizer_metadata = Tokenizer.metadata(tokenizer)
     vocab_size = tokenizer_metadata.vocab_size
     pad_token_id = tokenizer_metadata.pad_token_id

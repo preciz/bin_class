@@ -88,4 +88,39 @@ defmodule BinClass.TokenizerTest do
              ]
            } = decoded["pre_tokenizer"]
   end
+
+  test "applies default NFKC and lowercase normalizer" do
+    tokenizer = Tokenizer.train(["Hello World"], vocab_size: 100)
+    {:ok, enc_upper} = TokenizerImpl.encode(tokenizer, "HELLO")
+    {:ok, enc_lower} = TokenizerImpl.encode(tokenizer, "hello")
+
+    assert Encoding.get_tokens(enc_upper) == Encoding.get_tokens(enc_lower)
+
+    json = Tokenizer.to_json(tokenizer)
+    {:ok, decoded} = JSON.decode(json)
+
+    assert %{
+             "type" => "Sequence",
+             "normalizers" => [
+               %{"type" => "NFKC"},
+               %{"type" => "Lowercase"}
+             ]
+           } = decoded["normalizer"]
+  end
+
+  test "supports custom and disabled normalizers" do
+    tokenizer_none = Tokenizer.train(["Hello World"], vocab_size: 100, normalizer: :none)
+    {:ok, decoded_none} = Tokenizer.to_json(tokenizer_none) |> JSON.decode()
+    assert is_nil(decoded_none["normalizer"])
+
+    tokenizer_nfkc = Tokenizer.train(["Hello World"], vocab_size: 100, normalizer: :nfkc)
+    {:ok, decoded_nfkc} = Tokenizer.to_json(tokenizer_nfkc) |> JSON.decode()
+    assert %{"type" => "NFKC"} = decoded_nfkc["normalizer"]
+  end
+
+  test "rejects invalid normalizer options" do
+    assert_raise ArgumentError, ~r/:normalizer must be/, fn ->
+      Tokenizer.train(["hello world"], normalizer: :invalid_normalizer)
+    end
+  end
 end

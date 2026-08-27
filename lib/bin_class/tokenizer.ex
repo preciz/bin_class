@@ -4,18 +4,15 @@ defmodule BinClass.Tokenizer do
   """
 
   alias BinClass.Options
-  alias Tokenizers.{Model, PreTokenizer, Tokenizer, Trainer}
+  alias Tokenizers.{Model, Normalizer, PreTokenizer, Tokenizer, Trainer}
 
   @default_vocab_size 30_000
+  @default_normalizer :nfkc_lowercase
   @pad_token "[PAD]"
   @unk_token "[UNK]"
 
   @doc """
   Returns the vocabulary size and required special-token IDs for a tokenizer.
-
-  The returned map contains `:vocab_size`, `:pad_token_id`, and
-  `:unk_token_id`. Raises `ArgumentError` when the tokenizer does not contain
-  distinct `[PAD]` and `[UNK]` tokens.
   """
   def metadata(tokenizer) do
     vocab_size = Tokenizer.get_vocab_size(tokenizer)
@@ -60,15 +57,25 @@ defmodule BinClass.Tokenizer do
     * `:vocab_size` - Positive maximum vocabulary size. It must be at least
       `5` so all required special tokens can be included. Defaults to
       `#{@default_vocab_size}`.
+    * `:normalizer` - Text normalizer to apply before tokenization. Accepts
+      `:nfkc_lowercase` (Unicode NFKC + lowercasing, default), `:nfkc`,
+      `:lowercase`, `:none`, `nil`, or a custom `Tokenizers.Normalizer` struct.
+      Defaults to `:nfkc_lowercase`.
 
   The tokenizer always includes `[UNK]`, `[CLS]`, `[SEP]`, `[PAD]`, and
   `[MASK]` as special tokens.
   """
   def train(data, opts \\ []) do
-    opts = Keyword.validate!(opts, vocab_size: @default_vocab_size)
+    opts =
+      Keyword.validate!(opts,
+        vocab_size: @default_vocab_size,
+        normalizer: @default_normalizer
+      )
 
     vocab_size =
       opts |> Keyword.fetch!(:vocab_size) |> Options.validate_positive_integer!(:vocab_size)
+
+    normalizer = validate_normalizer!(Keyword.fetch!(opts, :normalizer))
 
     if vocab_size < 5 do
       raise ArgumentError,
@@ -78,6 +85,8 @@ defmodule BinClass.Tokenizer do
 
     {:ok, model} = Model.BPE.init(%{}, [], unk_token: "[UNK]")
     {:ok, tokenizer} = Tokenizer.init(model)
+
+    tokenizer = apply_normalizer(tokenizer, normalizer)
 
     pre_tokenizer =
       PreTokenizer.sequence([
@@ -131,6 +140,38 @@ defmodule BinClass.Tokenizer do
       Tokenizer.save(tokenizer, tmp_path)
       File.read!(tmp_path)
     end)
+  end
+
+  defp apply_normalizer(tokenizer, :none), do: tokenizer
+  defp apply_normalizer(tokenizer, nil), do: tokenizer
+
+  defp apply_normalizer(tokenizer, :nfkc_lowercase) do
+    normalizer = Normalizer.sequence([Normalizer.nfkc(), Normalizer.lowercase()])
+    Tokenizer.set_normalizer(tokenizer, normalizer)
+  end
+
+  defp apply_normalizer(tokenizer, :nfkc) do
+    Tokenizer.set_normalizer(tokenizer, Normalizer.nfkc())
+  end
+
+  defp apply_normalizer(tokenizer, :lowercase) do
+    Tokenizer.set_normalizer(tokenizer, Normalizer.lowercase())
+  end
+
+  defp apply_normalizer(tokenizer, normalizer) do
+    Tokenizer.set_normalizer(tokenizer, normalizer)
+  end
+
+  defp validate_normalizer!(normalizer)
+       when normalizer in [:nfkc_lowercase, :nfkc, :lowercase, :none, nil],
+       do: normalizer
+
+  defp validate_normalizer!(%Tokenizers.Normalizer{} = normalizer), do: normalizer
+
+  defp validate_normalizer!(normalizer) do
+    raise ArgumentError,
+          ":normalizer must be :nfkc_lowercase, :nfkc, :lowercase, :none, nil, or a " <>
+            "Tokenizers.Normalizer struct, got: #{inspect(normalizer)}"
   end
 
   defp required_token_id!(tokenizer, token) do

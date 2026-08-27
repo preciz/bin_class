@@ -13,6 +13,8 @@ defmodule BinClass.Training.Config do
     :learning_rate,
     :decay,
     :schedule,
+    :vocab_size,
+    :normalizer,
     :labels,
     :target_mode,
     :target_threshold,
@@ -39,6 +41,8 @@ defmodule BinClass.Training.Config do
         :learning_rate,
         :decay,
         :schedule,
+        :vocab_size,
+        :normalizer,
         :labels,
         :target_mode,
         :target_threshold,
@@ -79,6 +83,11 @@ defmodule BinClass.Training.Config do
         opts
         |> Keyword.get(:schedule, :linear)
         |> Schedules.validate_schedule!(),
+      vocab_size:
+        opts
+        |> Keyword.get(:vocab_size, 30_000)
+        |> Options.validate_positive_integer!(:vocab_size),
+      normalizer: Keyword.get(opts, :normalizer, :nfkc_lowercase),
       labels: opts |> Keyword.get(:labels, Labels.default()) |> Labels.validate!(),
       target_mode: target_mode,
       target_threshold: target_threshold,
@@ -123,23 +132,43 @@ defmodule BinClass.Training.Config do
   end
 
   defp validate_configuration!(config) do
-    if !(is_integer(config.epochs) and config.epochs > 0) do
-      raise ArgumentError,
-            ":epochs must be a positive integer, got: #{inspect(config.epochs)}"
-    end
+    validate_epochs!(config.epochs)
+    validate_batch_size!(config.batch_size)
+    validate_vocab_size!(config.vocab_size)
+    validate_validation_split!(config.validation_split)
+    validate_sequence_limits!(config)
+    config
+  end
 
-    if !(is_integer(config.batch_size) and config.batch_size > 0) do
-      raise ArgumentError,
-            ":batch_size must be a positive integer, got: #{inspect(config.batch_size)}"
-    end
+  defp validate_epochs!(epochs) when is_integer(epochs) and epochs > 0, do: epochs
 
-    if !(is_number(config.validation_split) and config.validation_split > 0 and
-           config.validation_split < 1) do
-      raise ArgumentError,
-            ":validation_split must be a number greater than 0 and less than 1, " <>
-              "got: #{inspect(config.validation_split)}"
-    end
+  defp validate_epochs!(epochs) do
+    raise ArgumentError, ":epochs must be a positive integer, got: #{inspect(epochs)}"
+  end
 
+  defp validate_batch_size!(batch_size) when is_integer(batch_size) and batch_size > 0,
+    do: batch_size
+
+  defp validate_batch_size!(batch_size) do
+    raise ArgumentError, ":batch_size must be a positive integer, got: #{inspect(batch_size)}"
+  end
+
+  defp validate_vocab_size!(vocab_size) when vocab_size >= 5, do: vocab_size
+
+  defp validate_vocab_size!(vocab_size) do
+    raise ArgumentError,
+          ":vocab_size must be at least 5 to include the required special tokens, got: #{vocab_size}"
+  end
+
+  defp validate_validation_split!(split) when is_number(split) and split > 0 and split < 1,
+    do: split
+
+  defp validate_validation_split!(split) do
+    raise ArgumentError,
+          ":validation_split must be a number greater than 0 and less than 1, got: #{inspect(split)}"
+  end
+
+  defp validate_sequence_limits!(config) do
     Model.validate_vector_length!(config.architecture, config.vector_length)
 
     if config.minimum_input_tokens > config.vector_length do
@@ -147,7 +176,5 @@ defmodule BinClass.Training.Config do
             ":minimum_input_tokens cannot exceed :vector_length, got " <>
               "#{config.minimum_input_tokens} and #{config.vector_length}"
     end
-
-    config
   end
 end
