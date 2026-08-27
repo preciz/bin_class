@@ -9,6 +9,18 @@ defmodule BinClassTest do
     assert Code.ensure_loaded?(BinClass.Tokenizer)
   end
 
+  test "BinClass.train/2 delegates to BinClass.Trainer.train/2" do
+    data = [
+      %{text: "great product love it", label: 1},
+      %{text: "terrible product hate it", label: 0}
+    ]
+
+    classifier = BinClass.train(data, epochs: 1, batch_size: 1, vector_length: 8)
+    assert %BinClass.Classifier{} = classifier
+    assert classifier.architecture == :parallel_cnn
+    assert classifier.vector_length == 8
+  end
+
   test "public inference constructors reject unknown options before doing work" do
     classifier = %BinClass.Classifier{}
 

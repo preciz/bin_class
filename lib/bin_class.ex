@@ -13,7 +13,7 @@ defmodule BinClass do
       ]
 
       # Use a map for explicit label mapping
-      classifier = BinClass.Trainer.train(data,
+      classifier = BinClass.train(data,
         epochs: 5,
         labels: %{0 => "negative", 1 => "positive"}
       )
@@ -41,6 +41,13 @@ defmodule BinClass do
       result = predict.("Instant prediction")
 
   """
+
+  @doc """
+  Trains a binary classifier.
+
+  Delegates to `BinClass.Trainer.train/2`. See `BinClass.Trainer.train/2` for full option details.
+  """
+  defdelegate train(data, opts \\ []), to: BinClass.Trainer
 
   @doc """
   Saves the classifier to a file.
