@@ -22,7 +22,7 @@ end
 
 ### 1. Prepare your data
 
-Data should be an enumerable of maps containing `:text` and `:label` (0 or 1).
+Data can be an enumerable of maps (`%{text: "...", label: 1}` or `%{"text" => "...", "label" => 1}`) or tuples (`{"...", label}`).
 
 ```elixir
 data = [
@@ -30,22 +30,36 @@ data = [
   %{text: "I really hated this experience.", label: 0},
   # ... more samples
 ]
+
+# Inspect dataset balance and text length statistics:
+summary = BinClass.summary(data)
+IO.puts(BinClass.format_summary(summary))
+
+# Stratified train / validation split:
+{train_data, val_data} = BinClass.Dataset.split(data, validation_split: 0.1, seed: 42)
 ```
 
 ### 2. Train the model
 
 ```elixir
-# Output labels must be distinct binaries in a two-element list or explicit map.
-classifier = BinClass.Trainer.train(data,
-  epochs: 10,
-  labels: %{0 => "negative", 1 => "positive"}
+# Output labels can be customized with a two-element list or map.
+classifier = BinClass.train(train_data,
+  epochs: 5,
+  labels: %{0 => "negative", 1 => "positive"},
+  label_smoothing: 0.02
 )
 ```
 
-By default, training uses the `:cnn` architecture, a fixed token vector length
-of `512`, output labels `["0", "1"]`, and argmax classification. Restricting
-persisted output labels to binaries keeps saved classifiers compatible with
-safe Erlang term decoding in a fresh VM.
+By default, training uses the **`:parallel_cnn`** architecture with 2-head attentive pooling, a fixed sequence length of `512`, NFKC lowercasing normalizer, vocabulary size `8_000`, and argmax classification.
+
+### 3. Evaluate the model
+
+```elixir
+result = BinClass.evaluate(classifier, val_data)
+IO.puts(BinClass.format_report(result))
+```
+
+This outputs a comprehensive evaluation report with **Accuracy**, **Balanced Accuracy**, **Precision**, **Recall**, **Specificity**, **F1 Score**, **Cross-Entropy Loss**, and the full **Confusion Matrix**.
 
 ### Soft targets
 
@@ -162,7 +176,7 @@ selection.strategy
 #=> :top_two_mean
 ```
 
-### 3. Save and Load
+### 4. Save and Load
 
 You can save the entire model (including tokenizer, parameters, decision policy, and metadata) to a single file.
 
@@ -176,7 +190,7 @@ serving = BinClass.load("my_model.bin")
 serving = BinClass.serving(classifier, batch_size: 32)
 ```
 
-### 4. Optimized Inference
+### 5. Optimized Inference
 
 There are two ways to run predictions:
 
@@ -247,10 +261,11 @@ The supported API is organized around these modules:
 
 | Module | Purpose |
 |---|---|
-| `BinClass` | Save, load, serialize, and deserialize classifiers; build servings and compiled predictors. |
+| `BinClass` | Primary entry point: train, evaluate, summarize, format reports, save/load classifiers, build servings and compiled predictors. |
+| `BinClass.Dataset` | Inspect dataset distributions and word/character statistics (`summary/1`, `format_summary/1`), and perform stratified train/val/test splits (`split/2`). |
 | `BinClass.Trainer` | Train complete `BinClass.Classifier` artifacts from labeled text. |
-| `BinClass.Evaluation` | Evaluate fixed thresholds, calibrate a threshold, or compare probability strategies. |
-| `BinClass.Model` | List and directly build the supported Axon architectures. |
+| `BinClass.Evaluation` | Evaluate trained classifiers on datasets, compute confusion matrices, calibrate decision thresholds, or compare probability strategies. |
+| `BinClass.Model` | List and directly build the supported Axon neural architectures. |
 | `BinClass.Tokenizer` | Train tokenizers and read the metadata needed for vectorization. |
 | `BinClass.Vectorizer` | Encode text into fixed-length padded token vectors. |
 | `BinClass.Classifier` | The complete trained classifier artifact consumed by persistence and inference APIs. |
@@ -263,9 +278,11 @@ directly.
 ## Features
 
 - **Production Ready**: Built on `Nx.Serving` for automatic batching and process isolation.
+- **Top-Level Convenience**: One-line training (`BinClass.train/2`), dataset inspection (`BinClass.summary/1`), and comprehensive evaluation (`BinClass.evaluate/3`).
 - **Unified Serialization**: Save and load the entire classifier state, including tokenizer, model parameters, explicit decision policy, input validation, and training metadata, from a single file.
 - **Named Architectures**: Serialized classifiers identify their architecture explicitly by name.
-- **Multiple Architectures**: Supports CNN variants, **Sep-SE-CNN** (Separable Convolutions + Squeeze-and-Excitation), and **Transformer Encoder**.
+- **Multiple Architectures**: Supports **Parallel CNN with Attentive Pooling** (default), CNN variants, **Sep-SE-CNN** (Separable Convolutions + Squeeze-and-Excitation), and **Transformer Encoder**.
+- **Target Regularization**: Supports `:label_smoothing` to improve calibration and prevent overconfidence on ambiguous boundary labels.
 - **Explicit Decisions**: Defaults to argmax and supports fixed or validation-optimized positive thresholds independently of architecture.
 - **Input Abstention**: Optionally returns `:insufficient_input` for inputs below a configured token minimum while retaining raw probabilities.
 - **Complete-Document Inspection**: Scans arbitrarily long text into overlapping token windows and returns every chunk's exact input byte span and raw prediction.
@@ -278,11 +295,11 @@ directly.
 
 Classifiers store one of these named architectures:
 
+- `:parallel_cnn`: parallel CNN with multi-scale kernel convolutions and multi-head attentive pooling (**default**)
 - `:cnn`: original CNN
 - `:cnn_mixed_pooling`: CNN with mixed pooling
 - `:multi_scale_cnn`: multi-scale CNN
 - `:sep_se_cnn`: separable CNN with squeeze-and-excitation
-- `:parallel_cnn`: parallel CNN
 - `:transformer`: transformer encoder
 
 No architecture implicitly changes label thresholds or rejects short inputs.
@@ -298,13 +315,14 @@ For production training, start with argmax unless validation results justify a
 different operating point:
 
 ```elixir
-classifier = BinClass.Trainer.train(data,
-  epochs: 10,
-  architecture: :cnn,
+classifier = BinClass.train(data,
+  epochs: 5,
+  architecture: :parallel_cnn,
   vector_length: 512,
   decision_policy:
     {:optimize_threshold,
-     [objective: :accuracy, false_positive_cost: 0.5]},
+     [objective: :balanced_accuracy, false_positive_cost: 0.5]},
+  label_smoothing: 0.02,
   minimum_input_tokens: 64
 )
 ```
