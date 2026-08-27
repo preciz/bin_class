@@ -458,6 +458,62 @@ defmodule BinClass.TrainerTest do
              Dataset.split_and_balance(data, %{config | seed: 5678})
   end
 
+  test "validates and applies label_smoothing" do
+    assert_raise ArgumentError, ~r/:label_smoothing must be a number between 0.0 and 0.5/, fn ->
+      Config.new!(label_smoothing: -0.05, vector_length: 8)
+    end
+
+    assert_raise ArgumentError, ~r/:label_smoothing must be a number between 0.0 and 0.5/, fn ->
+      Config.new!(label_smoothing: 0.6, vector_length: 8)
+    end
+
+    assert_raise ArgumentError, ~r/:label_smoothing must be a number between 0.0 and 0.5/, fn ->
+      Config.new!(label_smoothing: "0.1", vector_length: 8)
+    end
+
+    config = Config.new!(label_smoothing: 0.1, vector_length: 8, batch_size: 2)
+    assert config.label_smoothing == 0.1
+
+    data = [
+      %{text: "sample positive", label: 1},
+      %{text: "sample negative", label: 0}
+    ]
+
+    tokenizer = BinClass.Tokenizer.train(Enum.map(data, & &1.text), vocab_size: 100)
+    metadata = BinClass.Tokenizer.metadata(tokenizer)
+
+    {_batches, [labels_tensor]} =
+      Dataset.build_batches(data, tokenizer, config, metadata.pad_token_id)
+
+    # Label 1 with alpha=0.1 smoothed -> [0.05, 0.95]
+    # Label 0 with alpha=0.1 smoothed -> [0.95, 0.05]
+    labels_list = Nx.to_flat_list(labels_tensor)
+    assert_in_delta Enum.at(labels_list, 0), 0.05, 1.0e-5
+    assert_in_delta Enum.at(labels_list, 1), 0.95, 1.0e-5
+    assert_in_delta Enum.at(labels_list, 2), 0.95, 1.0e-5
+    assert_in_delta Enum.at(labels_list, 3), 0.05, 1.0e-5
+  end
+
+  test "trains successfully with label_smoothing enabled" do
+    data = [
+      %{text: "positive example one", label: 1},
+      %{text: "positive example two", label: 1},
+      %{text: "negative example one", label: 0},
+      %{text: "negative example two", label: 0}
+    ]
+
+    classifier =
+      Trainer.train(data,
+        epochs: 1,
+        batch_size: 2,
+        vector_length: 16,
+        vocab_size: 100,
+        label_smoothing: 0.05
+      )
+
+    assert %BinClass.Classifier{} = classifier
+  end
+
   defp split_and_balance(data, opts) do
     config = opts |> Keyword.put_new(:vector_length, 8) |> Config.new!()
     Dataset.split_and_balance(data, config)

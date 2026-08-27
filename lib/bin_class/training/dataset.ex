@@ -123,25 +123,45 @@ defmodule BinClass.Training.Dataset do
       examples
       |> Enum.map(& &1.label)
       |> Nx.tensor()
-      |> target_tensor(config.target_mode)
+      |> target_tensor(config.target_mode, config.label_smoothing)
 
     {data, labels}
   end
 
-  defp target_tensor(targets, :hard) do
-    targets
-    |> Nx.new_axis(-1)
-    |> Nx.equal(Nx.tensor([0, 1]))
+  defp target_tensor(targets, :hard, smoothing) do
+    tensor =
+      targets
+      |> Nx.new_axis(-1)
+      |> Nx.equal(Nx.tensor([0, 1]))
+
+    if smoothing > 0.0 do
+      tensor |> Nx.as_type(:f32) |> smooth_targets(smoothing)
+    else
+      tensor
+    end
   end
 
-  defp target_tensor(targets, :soft) do
+  defp target_tensor(targets, :soft, smoothing) do
     positive_targets =
       targets
       |> Nx.as_type(:f32)
       |> Nx.new_axis(-1)
 
     negative_targets = Nx.subtract(1.0, positive_targets)
-    Nx.concatenate([negative_targets, positive_targets], axis: -1)
+    tensor = Nx.concatenate([negative_targets, positive_targets], axis: -1)
+
+    if smoothing > 0.0 do
+      smooth_targets(tensor, smoothing)
+    else
+      tensor
+    end
+  end
+
+  defp smooth_targets(tensor, smoothing) do
+    Nx.add(
+      Nx.multiply(tensor, 1.0 - smoothing),
+      smoothing / 2.0
+    )
   end
 
   defp balance_data(data, config) do

@@ -28,6 +28,7 @@ defmodule BinClass.Training.Config do
     :decision_config,
     :minimum_input_tokens,
     :vector_length,
+    :label_smoothing,
     :seed
   ]
 
@@ -56,6 +57,7 @@ defmodule BinClass.Training.Config do
         :decision_policy,
         :minimum_input_tokens,
         :vector_length,
+        :label_smoothing,
         :seed
       ])
 
@@ -113,10 +115,23 @@ defmodule BinClass.Training.Config do
         |> Keyword.get(:minimum_input_tokens, 0)
         |> DecisionPolicy.validate_minimum_input_tokens!(),
       vector_length: Keyword.get(opts, :vector_length, @default_vector_length),
+      label_smoothing:
+        opts
+        |> Keyword.get(:label_smoothing, 0.0)
+        |> validate_label_smoothing!(),
       seed: seed
     }
 
     validate_configuration!(config)
+  end
+
+  defp validate_label_smoothing!(smoothing)
+       when is_number(smoothing) and smoothing >= 0.0 and smoothing <= 0.5,
+       do: smoothing / 1.0
+
+  defp validate_label_smoothing!(smoothing) do
+    raise ArgumentError,
+          ":label_smoothing must be a number between 0.0 and 0.5, got: #{inspect(smoothing)}"
   end
 
   defp validate_target_options!(target_mode, target_threshold) do

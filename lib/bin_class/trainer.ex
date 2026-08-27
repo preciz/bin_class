@@ -50,6 +50,8 @@ defmodule BinClass.Trainer do
     * `:vocab_size` - Positive maximum vocabulary size for tokenizer training. Defaults to `8_000`.
     * `:normalizer` - Text normalizer to apply before tokenization. Accepts `:nfkc_lowercase`
       (default), `:nfkc`, `:lowercase`, `:none`, `nil`, or a `Tokenizers.Normalizer` struct.
+    * `:label_smoothing` - Label smoothing factor $\alpha \in [0.0, 0.5]$ applied to target labels
+      during training to regularize extreme confidence. Defaults to `0.0` (no smoothing).
     * `:seed` - Optional integer seed for deterministic partition ordering, model initialization,
       and dropout. Defaults to nondeterministic training.
   """
