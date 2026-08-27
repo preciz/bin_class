@@ -1,48 +1,13 @@
 defmodule BinClass.Evaluation do
   @moduledoc """
-  Evaluates positive-class probabilities and calibrates decision thresholds.
+  Evaluates classifiers, positive-class probabilities, and calibrates decision thresholds.
 
-  Rows may have any shape. The `:probability`, `:label`, `:target`, and
-  `:eligible` options accept either a map key or a one-argument accessor
-  function. By default, rows are expected to contain `:probability` and
-  `:label` keys. The label must be `0`, `1`, `false`, or `true`.
-
-  A separate soft `:target` may be supplied for the Brier score. It defaults to
-  the binary label. Rows are eligible by default; an `:eligible` accessor can
-  exclude abstentions or otherwise invalid inputs from every metric.
-
-  ## Fixed-threshold evaluation
-
-      BinClass.Evaluation.evaluate(rows,
-        threshold: 0.7,
-        probability: :positive_probability,
-        label: :positive?
-      )
-
-  ## Threshold calibration
-
-      BinClass.Evaluation.calibrate(rows,
-        objective: :balanced_accuracy,
-        false_positive_cost: 0.5
-      )
-
-  Calibration evaluates every distinct decision partition represented by the
-  observed probabilities. The returned threshold is centered between adjacent
-  probabilities whenever possible.
-
-  ## Strategy selection
-
-      BinClass.Evaluation.select(rows,
-        strategies: [
-          maximum: fn row -> row.probabilities.maximum end,
-          top_two_mean: fn row -> row.probabilities.top_two_mean end
-        ],
-        label: :label
-      )
-
-  Each strategy is calibrated independently. The result includes the selected
-  strategy and its metrics.
+  Supports evaluating trained `%BinClass.Classifier{}` structs directly on raw
+  text datasets, formatting evaluation reports, and performing fixed-threshold
+  evaluation and calibration over probability rows.
   """
+
+  alias BinClass.Classifier
 
   @objectives [:accuracy, :balanced_accuracy, :f1]
 
@@ -58,30 +23,24 @@ defmodule BinClass.Evaluation do
   @selection_defaults Keyword.delete(@common_defaults, :probability)
 
   @doc """
-  Evaluates rows at a fixed positive-class threshold.
+  Evaluates a classifier, predictor, or probability rows.
 
-  In addition to confusion-matrix counts, the result contains accuracy,
-  precision, recall, specificity, false-positive rate, balanced accuracy, F1,
-  Brier score, and the configured objective score.
+  When passed a `%BinClass.Classifier{}` or predictor function and a dataset,
+  evaluates predictions on the dataset and returns comprehensive classification metrics.
 
-  ## Options
-
-    * `:threshold` - positive-class threshold from `0.0` through `1.0`.
-      Defaults to `0.5`.
-    * `:probability` - map key or one-argument probability accessor. Defaults
-      to `:probability`.
-    * `:label` - map key or one-argument binary-label accessor. Defaults to
-      `:label`.
-    * `:target` - optional map key or accessor for a soft target from `0.0`
-      through `1.0`, used for the Brier score. Defaults to the binary label.
-    * `:eligible` - optional map key or accessor returning a boolean. Ineligible
-      rows are counted in `:excluded_count` but omitted from metrics.
-    * `:objective` - `:accuracy`, `:balanced_accuracy`, or `:f1`. Defaults to
-      `:accuracy`.
-    * `:false_positive_cost` - non-negative multiple of the false-positive rate
-      subtracted from the objective. Defaults to `0.0`.
+  When passed probability rows and options, evaluates the rows at a fixed threshold.
   """
-  def evaluate(rows, opts \\ []) do
+  def evaluate(classifier_or_predictor_or_rows, data_or_opts \\ [], opts \\ [])
+
+  def evaluate(%Classifier{} = classifier, data, opts) do
+    evaluate_dataset(classifier, data, opts)
+  end
+
+  def evaluate(predictor_fn, data, opts) when is_function(predictor_fn, 1) and is_list(data) do
+    evaluate_dataset(predictor_fn, data, opts)
+  end
+
+  def evaluate(rows, opts, []) do
     opts =
       opts
       |> Keyword.validate!([threshold: 0.5] ++ @common_defaults)
@@ -95,6 +54,227 @@ defmodule BinClass.Evaluation do
 
     metrics(threshold, counts, context)
   end
+
+  @doc """
+  Evaluates a classifier against a dataset of text and labels.
+  """
+  def evaluate_dataset(classifier_or_predictor, data, opts \\ [])
+
+  def evaluate_dataset(%Classifier{} = classifier, data, opts) do
+    opts = Keyword.validate!(opts, batch_size: 32, compiler: EXLA, target_threshold: nil)
+    batch_size = Keyword.fetch!(opts, :batch_size)
+    compiler = Keyword.fetch!(opts, :compiler)
+
+    threshold =
+      Keyword.get(opts, :target_threshold) || classifier.target_threshold || 0.5
+
+    predictor = BinClass.compile_predictor(classifier, batch_size: batch_size, compiler: compiler)
+    {label_0, label_1} = extract_labels(classifier.labels)
+
+    normalized_data = normalize_dataset(data, label_0, label_1, threshold)
+
+    if normalized_data == [] do
+      raise ArgumentError, "evaluation data must not be empty"
+    end
+
+    texts = Enum.map(normalized_data, & &1.text)
+    predictions = predictor.(texts)
+
+    calculate_metrics(normalized_data, predictions, label_0, label_1)
+  end
+
+  def evaluate_dataset(predictor_fn, data, opts) when is_function(predictor_fn, 1) do
+    opts = Keyword.validate!(opts, labels: ["0", "1"], target_threshold: 0.5)
+    {label_0, label_1} = extract_labels(Keyword.fetch!(opts, :labels))
+    threshold = Keyword.fetch!(opts, :target_threshold)
+
+    normalized_data = normalize_dataset(data, label_0, label_1, threshold)
+
+    if normalized_data == [] do
+      raise ArgumentError, "evaluation data must not be empty"
+    end
+
+    texts = Enum.map(normalized_data, & &1.text)
+    predictions = predictor_fn.(texts)
+    predictions = if is_list(predictions), do: predictions, else: [predictions]
+
+    calculate_metrics(normalized_data, predictions, label_0, label_1)
+  end
+
+  @doc """
+  Formats an evaluation result into a human-readable text report.
+  """
+  def format_report(result) when is_map(result) do
+    [label_0, label_1] = result.labels
+    cm = result.confusion_matrix
+
+    """
+    ============================= Evaluation Report =============================
+    Total Samples:        #{result.total}
+    Accuracy:             #{format_percentage(result.accuracy)}
+    Balanced Accuracy:    #{format_percentage(result.balanced_accuracy)}
+    Precision (#{label_1}): #{format_percentage(result.precision)}
+    Recall (#{label_1}):    #{format_percentage(result.recall)}
+    Specificity (#{label_0}): #{format_percentage(result.specificity)}
+    F1 Score:             #{format_percentage(result.f1_score)}
+    Average Loss:         #{Float.round(result.loss, 4)}
+
+    Confusion Matrix:
+                          Predicted #{label_0}    Predicted #{label_1}
+      Actual #{label_0}#{String.pad_leading("#{cm.tn} (TN)", 18)}#{String.pad_leading("#{cm.fp} (FP)", 24)}
+      Actual #{label_1}#{String.pad_leading("#{cm.fn} (FN)", 18)}#{String.pad_leading("#{cm.tp} (TP)", 24)}
+    =============================================================================
+    """
+    |> String.trim_trailing()
+  end
+
+  defp extract_labels([label_0, label_1]), do: {label_0, label_1}
+  defp extract_labels(%{0 => label_0, 1 => label_1}), do: {label_0, label_1}
+  defp extract_labels(%{"0" => label_0, "1" => label_1}), do: {label_0, label_1}
+
+  defp normalize_dataset(data, label_0, label_1, threshold) do
+    data
+    |> Enum.map(fn item ->
+      {text, raw_label} = extract_text_and_label(item)
+      expected_class = normalize_eval_label(raw_label, label_0, label_1, threshold)
+      target_prob = extract_target_prob(raw_label, threshold)
+
+      %{
+        text: text,
+        expected_class: expected_class,
+        target_prob: target_prob
+      }
+    end)
+  end
+
+  defp extract_text_and_label(%{text: text, label: label}), do: {text, label}
+  defp extract_text_and_label(%{"text" => text, "label" => label}), do: {text, label}
+  defp extract_text_and_label({text, label}) when is_binary(text), do: {text, label}
+
+  defp extract_text_and_label(other) do
+    raise ArgumentError,
+          "Invalid evaluation item #{inspect(other)}. Expected map with :text and :label or {text, label} tuple."
+  end
+
+  defp normalize_eval_label(label, _label_0, _label_1, threshold) when is_float(label) do
+    if label >= threshold, do: 1, else: 0
+  end
+
+  defp normalize_eval_label(label, _label_0, _label_1, _threshold) when is_integer(label) do
+    if label == 1, do: 1, else: 0
+  end
+
+  defp normalize_eval_label(label, label_0, label_1, _threshold) when is_binary(label) do
+    cond do
+      label == label_1 -> 1
+      label == label_0 -> 0
+      label in ["1", "true", "positive"] -> 1
+      true -> 0
+    end
+  end
+
+  defp normalize_eval_label(label, label_0, label_1, threshold) when is_atom(label) do
+    normalize_eval_label(Atom.to_string(label), label_0, label_1, threshold)
+  end
+
+  defp extract_target_prob(label, _threshold)
+       when is_float(label) and label >= 0.0 and label <= 1.0,
+       do: label
+
+  defp extract_target_prob(label, _threshold) when is_integer(label),
+    do: if(label == 1, do: 1.0, else: 0.0)
+
+  defp extract_target_prob(label, threshold) do
+    if normalize_eval_label(label, "0", "1", threshold) == 1, do: 1.0, else: 0.0
+  end
+
+  defp calculate_metrics(normalized_data, predictions, label_0, label_1) do
+    pairs = Enum.zip(normalized_data, predictions)
+    total = length(pairs)
+
+    {counts, total_loss} =
+      Enum.reduce(pairs, {%{tp: 0, fp: 0, tn: 0, fn: 0}, 0.0}, fn {item, pred}, {cm, loss_sum} ->
+        {category, sample_loss} = evaluate_sample(item, pred, label_0, label_1)
+        {Map.update!(cm, category, &(&1 + 1)), loss_sum + sample_loss}
+      end)
+
+    compute_metric_summary(counts, total_loss, total, label_0, label_1)
+  end
+
+  defp evaluate_sample(item, pred, label_0, label_1) do
+    is_true_pos = item.expected_class == 1
+    is_pred_pos = pred.label == label_1
+    prob_pos = extract_probability_positive(pred, label_0, label_1, is_pred_pos)
+
+    clipped_p = max(1.0e-7, min(1.0 - 1.0e-7, prob_pos))
+    y = item.target_prob
+    sample_loss = -(y * :math.log(clipped_p) + (1.0 - y) * :math.log(1.0 - clipped_p))
+    category = classify_confusion_category(is_true_pos, is_pred_pos)
+
+    {category, sample_loss}
+  end
+
+  defp extract_probability_positive(%{probabilities: %{} = probs}, label_0, label_1, _is_pred_pos) do
+    case probs do
+      %{^label_1 => p} -> p
+      %{^label_0 => p0} -> 1.0 - p0
+      _ -> 0.5
+    end
+  end
+
+  defp extract_probability_positive(_pred, _label_0, _label_1, is_pred_pos) do
+    if is_pred_pos, do: 0.99, else: 0.01
+  end
+
+  defp classify_confusion_category(true, true), do: :tp
+  defp classify_confusion_category(false, true), do: :fp
+  defp classify_confusion_category(false, false), do: :tn
+  defp classify_confusion_category(true, false), do: :fn
+
+  defp compute_metric_summary(cm, total_loss, total, label_0, label_1) do
+    %{tp: tp, fp: fp, tn: tn, fn: fn_count} = cm
+
+    accuracy = safe_divide(tp + tn, total)
+    precision = safe_divide(tp, tp + fp)
+    recall = safe_divide(tp, tp + fn_count)
+    specificity = safe_divide(tn, tn + fp)
+    balanced_accuracy = (recall + specificity) / 2.0
+    f1_score = safe_divide(2.0 * precision * recall, precision + recall)
+    avg_loss = safe_divide(total_loss, total)
+
+    %{
+      total: total,
+      accuracy: accuracy,
+      balanced_accuracy: balanced_accuracy,
+      precision: precision,
+      recall: recall,
+      specificity: specificity,
+      f1_score: f1_score,
+      loss: avg_loss,
+      confusion_matrix: cm,
+      class_distribution: %{
+        label_0 => tn + fp,
+        label_1 => tp + fn_count
+      },
+      labels: [label_0, label_1]
+    }
+  end
+
+  defp safe_divide(num, den) do
+    if den == 0 or den == 0.0 do
+      0.0
+    else
+      num / den
+    end
+  end
+
+  defp format_percentage(val) when is_float(val) do
+    "#{Float.round(val * 100.0, 2)}%"
+  end
+
+  # ============================================================================
+  # THRESHOLD CALIBRATION & ROW EVALUATION
+  # ============================================================================
 
   @doc """
   Selects the best positive-class threshold for the supplied rows.

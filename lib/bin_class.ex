@@ -50,6 +50,20 @@ defmodule BinClass do
   defdelegate train(data, opts \\ []), to: BinClass.Trainer
 
   @doc """
+  Evaluates a trained classifier or predictor on a dataset and returns performance metrics.
+
+  Delegates to `BinClass.Evaluation.evaluate/3`.
+  """
+  defdelegate evaluate(classifier_or_predictor, data, opts \\ []), to: BinClass.Evaluation
+
+  @doc """
+  Formats an evaluation result map into a human-readable text report.
+
+  Delegates to `BinClass.Evaluation.format_report/1`.
+  """
+  defdelegate format_report(result), to: BinClass.Evaluation
+
+  @doc """
   Saves the classifier to a file.
   """
   def save(%BinClass.Classifier{} = classifier, path) do
