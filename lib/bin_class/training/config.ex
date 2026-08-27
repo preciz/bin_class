@@ -4,7 +4,7 @@ defmodule BinClass.Training.Config do
   alias BinClass.{DecisionPolicy, Labels, Model, Options}
   alias BinClass.Training.Schedules
 
-  @default_architecture :cnn
+  @default_architecture :parallel_cnn
   @default_vector_length 512
   @default_vocab_size 8_000
 

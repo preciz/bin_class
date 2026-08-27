@@ -128,7 +128,7 @@ defmodule BinClass.TrainerTest do
     result = Trainer.train(data, epochs: 1, batch_size: 1)
     assert %BinClass.Classifier{} = result
     assert result.vector_length == 512
-    assert result.architecture == :cnn
+    assert result.architecture == :parallel_cnn
     assert result.decision_policy == %{strategy: :argmax}
     assert result.minimum_input_tokens == 0
     assert result.labels == ["0", "1"]

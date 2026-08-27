@@ -36,7 +36,7 @@ defmodule BinClass.Trainer do
     * `:patience` - Non-negative integer number of epochs to wait for improvement before early
       stopping. Defaults to `5`.
     * `:compiler` - A module implementing `Nx.Defn.Compiler`. Defaults to `EXLA`.
-    * `:architecture` - The named architecture to use. Defaults to `:cnn`.
+    * `:architecture` - The named architecture to use. Defaults to `:parallel_cnn`.
     * `:dropout_rate` - Dropout rate from `0.0` up to, but excluding, `1.0`. Defaults to `0.2`.
     * `:decision_policy` - How probabilities become labels. Accepts `:argmax`,
       `{:positive_threshold, threshold}`, `:optimize_threshold`, or
