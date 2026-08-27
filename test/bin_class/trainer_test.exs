@@ -213,6 +213,35 @@ defmodule BinClass.TrainerTest do
     assert threshold >= 0.0 and threshold <= 1.0
   end
 
+  test "checkpoint selection evaluates and selects the best checkpoint using the configured objective" do
+    data =
+      for id <- 1..30 do
+        %{id: id, text: "sample text #{id} classification feature", label: rem(id, 2)}
+      end
+
+    result =
+      Trainer.train(data,
+        epochs: 2,
+        batch_size: 2,
+        vector_length: 8,
+        architecture: :cnn,
+        seed: 42,
+        decision_policy: {:optimize_threshold, [objective: :f1]}
+      )
+
+    assert %{
+             strategy: :positive_threshold,
+             optimization: %{
+               objective: :f1,
+               validation_score: validation_score,
+               validation_f1: validation_f1
+             }
+           } = result.decision_policy
+
+    assert validation_score == validation_f1
+    assert result.epoch in [0, 1]
+  end
+
   test "threshold optimization fails before model setup when both partitions cannot contain both classes" do
     insufficient_class =
       for id <- 1..20 do

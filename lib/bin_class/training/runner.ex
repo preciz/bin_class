@@ -42,56 +42,82 @@ defmodule BinClass.Training.Runner do
         |> Enum.map(fn checkpoint_path ->
           epoch = checkpoint_path |> Path.basename(".ckpt") |> String.to_integer()
           checkpoint = checkpoint_path |> File.read!() |> Axon.Loop.deserialize_state()
+          model_state = checkpoint.step_state.model_state
 
-          metrics =
-            calculate_validation_metrics(
+          {decision_policy, score, accuracy} =
+            evaluate_checkpoint(
+              config.decision_config,
               predict_fn,
-              checkpoint.step_state.model_state,
+              model_state,
               runner.validation_data,
               config,
-              runner.pad_token_id,
-              %{strategy: :argmax},
-              0
+              runner.pad_token_id
             )
 
           %{
             epoch: epoch,
-            validation_score: metrics.accuracy,
-            checkpoint: checkpoint
+            validation_score: score,
+            accuracy: accuracy,
+            decision_policy: decision_policy,
+            model_params: model_state
           }
         end)
+        |> Enum.sort_by(& &1.epoch)
         |> Enum.max_by(& &1.validation_score)
 
-      model_state = best_checkpoint.checkpoint.step_state.model_state
-
-      decision_policy =
-        resolve_decision_policy(
-          config.decision_config,
-          predict_fn,
-          model_state,
-          runner.validation_data,
-          config,
-          runner.pad_token_id
-        )
-
-      deployment_metrics =
-        calculate_validation_metrics(
-          predict_fn,
-          model_state,
-          runner.validation_data,
-          config,
-          runner.pad_token_id,
-          decision_policy,
-          config.minimum_input_tokens
-        )
-
       %{
-        model_params: model_state,
-        accuracy: deployment_metrics.accuracy,
+        model_params: best_checkpoint.model_params,
+        accuracy: best_checkpoint.accuracy,
         epoch: best_checkpoint.epoch,
-        decision_policy: decision_policy
+        decision_policy: best_checkpoint.decision_policy
       }
     end)
+  end
+
+  defp evaluate_checkpoint(
+         {:fixed, policy},
+         predict_fn,
+         model_state,
+         validation_data,
+         config,
+         pad_token_id
+       ) do
+    metrics =
+      calculate_validation_metrics(
+        predict_fn,
+        model_state,
+        validation_data,
+        config,
+        pad_token_id,
+        policy,
+        config.minimum_input_tokens
+      )
+
+    {policy, metrics.accuracy, metrics.accuracy}
+  end
+
+  defp evaluate_checkpoint(
+         {:optimize, optimization},
+         predict_fn,
+         model_state,
+         validation_data,
+         config,
+         pad_token_id
+       ) do
+    decision_policy =
+      resolve_decision_policy(
+        optimization,
+        predict_fn,
+        model_state,
+        validation_data,
+        config,
+        pad_token_id
+      )
+
+    score = decision_policy.optimization.validation_score
+    accuracy = decision_policy.optimization.validation_accuracy
+
+    {decision_policy, score, accuracy}
   end
 
   defp calculate_validation_metrics(
@@ -233,17 +259,7 @@ defmodule BinClass.Training.Runner do
   end
 
   defp resolve_decision_policy(
-         {:fixed, policy},
-         _predict_fn,
-         _trained_model_state,
-         _validation_data,
-         _config,
-         _pad_token_id
-       ),
-       do: policy
-
-  defp resolve_decision_policy(
-         {:optimize, optimization},
+         optimization,
          predict_fn,
          trained_model_state,
          validation_data,
