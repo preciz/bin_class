@@ -47,7 +47,7 @@ defmodule BinClass.Trainer do
       `:insufficient_input` at inference. Defaults to `0`.
     * `:vector_length` - Positive fixed sequence length satisfying the architecture's minimum.
       Defaults to `512`.
-    * `:vocab_size` - Positive maximum vocabulary size for tokenizer training. Defaults to `30_000`.
+    * `:vocab_size` - Positive maximum vocabulary size for tokenizer training. Defaults to `8_000`.
     * `:normalizer` - Text normalizer to apply before tokenization. Accepts `:nfkc_lowercase`
       (default), `:nfkc`, `:lowercase`, `:none`, `nil`, or a `Tokenizers.Normalizer` struct.
     * `:seed` - Optional integer seed for deterministic partition ordering, model initialization,

@@ -6,7 +6,7 @@ defmodule BinClass.Tokenizer do
   alias BinClass.Options
   alias Tokenizers.{Model, Normalizer, PreTokenizer, Tokenizer, Trainer}
 
-  @default_vocab_size 30_000
+  @default_vocab_size 8_000
   @default_normalizer :nfkc_lowercase
   @pad_token "[PAD]"
   @unk_token "[UNK]"

@@ -6,6 +6,7 @@ defmodule BinClass.Training.Config do
 
   @default_architecture :cnn
   @default_vector_length 512
+  @default_vocab_size 8_000
 
   @enforce_keys [
     :epochs,
@@ -85,7 +86,7 @@ defmodule BinClass.Training.Config do
         |> Schedules.validate_schedule!(),
       vocab_size:
         opts
-        |> Keyword.get(:vocab_size, 30_000)
+        |> Keyword.get(:vocab_size, @default_vocab_size)
         |> Options.validate_positive_integer!(:vocab_size),
       normalizer: Keyword.get(opts, :normalizer, :nfkc_lowercase),
       labels: opts |> Keyword.get(:labels, Labels.default()) |> Labels.validate!(),
