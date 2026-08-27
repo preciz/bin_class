@@ -74,4 +74,18 @@ defmodule BinClass.TokenizerTest do
       Tokenizer.metadata(tokenizer)
     end
   end
+
+  test "configures pre-tokenizer sequence with newline split and whitespace" do
+    tokenizer = Tokenizer.train(["hello\nworld foo bar"], vocab_size: 100)
+    json = Tokenizer.to_json(tokenizer)
+    {:ok, decoded} = JSON.decode(json)
+
+    assert %{
+             "type" => "Sequence",
+             "pretokenizers" => [
+               %{"type" => "Split", "behavior" => "Removed"},
+               %{"type" => "Whitespace"}
+             ]
+           } = decoded["pre_tokenizer"]
+  end
 end

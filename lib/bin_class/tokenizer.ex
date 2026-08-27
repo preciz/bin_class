@@ -79,16 +79,17 @@ defmodule BinClass.Tokenizer do
     {:ok, model} = Model.BPE.init(%{}, [], unk_token: "[UNK]")
     {:ok, tokenizer} = Tokenizer.init(model)
 
-    tokenizer =
-      tokenizer
-      |> Tokenizer.set_pre_tokenizer(
+    pre_tokenizer =
+      PreTokenizer.sequence([
         PreTokenizer.split(
           "
 ",
           :removed
-        )
-      )
-      |> Tokenizer.set_pre_tokenizer(PreTokenizer.whitespace())
+        ),
+        PreTokenizer.whitespace()
+      ])
+
+    tokenizer = Tokenizer.set_pre_tokenizer(tokenizer, pre_tokenizer)
 
     {:ok, trainer} =
       Trainer.bpe(
