@@ -351,6 +351,23 @@ defmodule BinClass.ModelTest do
     assert predict_fn.(params, token_ids) |> Nx.to_list() == [[1, 0, 1, 0]]
   end
 
+  test "masked_attentive_pooling applies attention weights across active tokens" do
+    input = Axon.input("input")
+    masking = Masking.new(input, 0)
+    embedded = Axon.embedding(input, 50, 16)
+
+    pooled = Masking.masked_attentive_pooling(embedded, masking, heads: 2, hidden_size: 16)
+    {init_fn, predict_fn} = Axon.build(pooled)
+
+    token_ids = Nx.tensor([[1, 2, 0, 0], [1, 2, 3, 4]], type: :u16)
+    params = init_fn.(token_ids, Axon.ModelState.empty())
+    result = predict_fn.(params, token_ids)
+
+    # 2 heads * 16 channels = 32 output channels
+    assert Nx.shape(result) == {2, 32}
+    refute Nx.any(Nx.is_nan(result)) |> Nx.to_number() == 1
+  end
+
   defp architecture_options(architecture, common) do
     architecture_specific =
       case architecture do

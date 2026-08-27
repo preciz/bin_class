@@ -97,6 +97,57 @@ defmodule BinClass.Model.Masking do
     )
   end
 
+  def masked_attentive_pooling(sequence, masking, opts \\ [])
+
+  def masked_attentive_pooling(
+        sequence,
+        %__MODULE__{token_mask: token_mask},
+        opts
+      ) do
+    opts = Keyword.validate!(opts, heads: 2, hidden_size: 64)
+    heads = Keyword.fetch!(opts, :heads)
+    hidden_size = Keyword.fetch!(opts, :hidden_size)
+
+    attn_hidden = Axon.dense(sequence, hidden_size, activation: :tanh)
+    scores = Axon.dense(attn_hidden, heads)
+
+    weights =
+      Axon.layer(
+        fn scores, token_mask, _opts ->
+          mask =
+            token_mask
+            |> Nx.new_axis(-1)
+            |> Nx.broadcast(Nx.shape(scores))
+
+          minimum = Nx.broadcast(-1.0e30, Nx.shape(scores))
+          masked_scores = Nx.select(mask, scores, minimum)
+
+          max_score = Nx.reduce_max(masked_scores, axes: [1], keep_axes: true)
+          exp = Nx.exp(Nx.subtract(masked_scores, max_score))
+          exp_masked = Nx.select(mask, exp, Nx.broadcast(0.0, Nx.shape(exp)))
+          sum_exp = Nx.sum(exp_masked, axes: [1], keep_axes: true) |> Nx.max(1.0e-12)
+          Nx.divide(exp_masked, sum_exp)
+        end,
+        [scores, token_mask]
+      )
+
+    Axon.layer(
+      fn sequence, weights, _opts ->
+        seq_expanded = Nx.new_axis(sequence, 2)
+        w_expanded = Nx.new_axis(weights, 3)
+
+        weighted = Nx.multiply(seq_expanded, w_expanded)
+        summed = Nx.sum(weighted, axes: [1])
+        shape = Nx.shape(summed)
+        b = elem(shape, 0)
+        h = elem(shape, 1)
+        d = elem(shape, 2)
+        Nx.reshape(summed, {b, h * d})
+      end,
+      [sequence, weights]
+    )
+  end
+
   def mask_attention_scores(scores, %__MODULE__{token_mask: token_mask}) do
     Axon.layer(
       fn scores, token_mask, _opts ->

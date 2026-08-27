@@ -27,19 +27,9 @@ defmodule BinClass.Model.ParallelCnn do
     b3 = embedded |> Axon.conv(f, kernel_size: 5, padding: :same, activation: :relu)
 
     Axon.concatenate([b1, b2, b3], axis: -1)
-    |> mixed_pooling(masking)
+    |> Masking.masked_attentive_pooling(masking, heads: 2, hidden_size: 64)
     |> Axon.dense(64, activation: :relu)
     |> Axon.dropout(Config.dropout_options(Keyword.get(opts, :seed), dropout_rate, 1))
     |> Axon.dense(2, activation: :softmax)
-  end
-
-  defp mixed_pooling(x, masking) do
-    Axon.concatenate(
-      [
-        Masking.masked_global_max(x, masking),
-        Masking.masked_global_avg(x, masking)
-      ],
-      axis: -1
-    )
   end
 end
