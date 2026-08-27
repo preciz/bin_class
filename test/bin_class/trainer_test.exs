@@ -330,6 +330,7 @@ defmodule BinClass.TrainerTest do
           {:patience, 1.5, ~r/:patience must be a non-negative integer/},
           {:dropout_rate, -0.1, ~r/:dropout_rate must be a number/},
           {:dropout_rate, 1, ~r/:dropout_rate must be a number/},
+          {:schedule, :not_a_schedule, ~r/:schedule must be/},
           {:compiler, String, ~r/:compiler must be a module implementing Nx.Defn.Compiler/}
         ] do
       assert_raise ArgumentError, message, fn ->

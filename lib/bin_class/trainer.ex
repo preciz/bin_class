@@ -7,7 +7,7 @@ defmodule BinClass.Trainer do
   """
 
   alias BinClass.{Model, Tokenizer}
-  alias BinClass.Training.{Config, Dataset, Runner}
+  alias BinClass.Training.{Config, Dataset, Runner, Schedules}
 
   @doc """
   Trains a binary classifier on the given data stream.
@@ -18,6 +18,10 @@ defmodule BinClass.Trainer do
     * `:batch_size` - Positive integer batch size for training. Defaults to `32`.
     * `:learning_rate` - Positive initial learning rate. Defaults to `1.0e-3`.
     * `:decay` - Non-negative AdamW weight decay. Defaults to `1.0e-2`.
+    * `:schedule` - Learning rate decay schedule. Accepts `:linear` (Meta FAIR warmup + linear
+      decay), `:cosine` (warmup + cosine decay), `:wsd` (warmup-stable-decay), `:constant`,
+      options tuples like `{:linear, warmup_ratio: 0.1}`, or a 1-argument schedule function.
+      Defaults to `:linear`.
     * `:labels` - Output label names as a two-element list of distinct binaries or
       `%{0 => negative_binary, 1 => positive_binary}`. Defaults to `["0", "1"]`.
     * `:target_mode` - How training labels are interpreted. `:hard` accepts only `0` and `1`;
@@ -71,9 +75,12 @@ defmodule BinClass.Trainer do
       Model.build(config.architecture, vocab_size, model_options)
     end
 
+    total_steps = config.epochs * length(training_data)
+    learning_rate_schedule = Schedules.build(config.schedule, config.learning_rate, total_steps)
+
     optimizer =
       Polaris.Optimizers.adamw(
-        learning_rate: config.learning_rate,
+        learning_rate: learning_rate_schedule,
         decay: config.decay
       )
 

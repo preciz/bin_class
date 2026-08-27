@@ -2,6 +2,7 @@ defmodule BinClass.Training.Config do
   @moduledoc false
 
   alias BinClass.{DecisionPolicy, Labels, Model, Options}
+  alias BinClass.Training.Schedules
 
   @default_architecture :cnn
   @default_vector_length 512
@@ -11,6 +12,7 @@ defmodule BinClass.Training.Config do
     :batch_size,
     :learning_rate,
     :decay,
+    :schedule,
     :labels,
     :target_mode,
     :target_threshold,
@@ -36,6 +38,7 @@ defmodule BinClass.Training.Config do
         :batch_size,
         :learning_rate,
         :decay,
+        :schedule,
         :labels,
         :target_mode,
         :target_threshold,
@@ -72,6 +75,10 @@ defmodule BinClass.Training.Config do
         opts
         |> Keyword.get(:decay, 1.0e-2)
         |> Options.validate_non_negative_number!(:decay),
+      schedule:
+        opts
+        |> Keyword.get(:schedule, :linear)
+        |> Schedules.validate_schedule!(),
       labels: opts |> Keyword.get(:labels, Labels.default()) |> Labels.validate!(),
       target_mode: target_mode,
       target_threshold: target_threshold,
