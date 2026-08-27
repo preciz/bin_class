@@ -64,6 +64,20 @@ defmodule BinClass do
   defdelegate format_report(result), to: BinClass.Evaluation
 
   @doc """
+  Computes summary statistics on a binary classification dataset.
+
+  Delegates to `BinClass.Dataset.summary/2`.
+  """
+  defdelegate summary(data, opts \\ []), to: BinClass.Dataset
+
+  @doc """
+  Formats a dataset summary map into a human-readable text report.
+
+  Delegates to `BinClass.Dataset.format_summary/1`.
+  """
+  defdelegate format_summary(summary), to: BinClass.Dataset
+
+  @doc """
   Saves the classifier to a file.
   """
   def save(%BinClass.Classifier{} = classifier, path) do
