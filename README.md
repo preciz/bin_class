@@ -296,6 +296,7 @@ directly.
 Classifiers store one of these named architectures:
 
 - `:parallel_cnn`: parallel CNN with multi-scale kernel convolutions and multi-head attentive pooling (**default**)
+- `:dense_dilated_cnn`: dense-connected multi-scale dilated CNN with 4-head attentive pooling
 - `:cnn`: original CNN
 - `:cnn_mixed_pooling`: CNN with mixed pooling
 - `:multi_scale_cnn`: multi-scale CNN

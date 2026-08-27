@@ -85,6 +85,18 @@ defmodule BinClass.ModelTest do
     assert %Axon{} = model_opts
   end
 
+  test "builds dense_dilated_cnn model" do
+    vocab_size = 100
+    model = Model.build(:dense_dilated_cnn, vocab_size)
+    assert %Axon{} = model
+
+    # Test custom opts
+    model_opts =
+      Model.build(:dense_dilated_cnn, vocab_size, embedding_size: 32, dropout_rate: 0.1)
+
+    assert %Axon{} = model_opts
+  end
+
   test "builds transformer model" do
     vocab_size = 100
     model = Model.build(:transformer, vocab_size)
@@ -137,6 +149,7 @@ defmodule BinClass.ModelTest do
              :multi_scale_cnn,
              :sep_se_cnn,
              :parallel_cnn,
+             :dense_dilated_cnn,
              :transformer
            ]
   end
@@ -145,6 +158,10 @@ defmodule BinClass.ModelTest do
     assert Model.minimum_vector_length(:cnn) == 3
     assert Model.minimum_vector_length(:cnn_mixed_pooling) == 3
     assert Model.minimum_vector_length(:multi_scale_cnn) == 5
+    assert Model.minimum_vector_length(:sep_se_cnn) == 1
+    assert Model.minimum_vector_length(:parallel_cnn) == 1
+    assert Model.minimum_vector_length(:dense_dilated_cnn) == 1
+    assert Model.minimum_vector_length(:transformer) == 1
 
     for architecture <- [:sep_se_cnn, :parallel_cnn, :transformer] do
       assert Model.minimum_vector_length(architecture) == 1
@@ -373,7 +390,7 @@ defmodule BinClass.ModelTest do
       case architecture do
         architecture when architecture in [:cnn, :cnn_mixed_pooling] -> [conv_filters: 16]
         architecture when architecture in [:multi_scale_cnn, :sep_se_cnn] -> [branch_filters: 8]
-        :parallel_cnn -> []
+        architecture when architecture in [:parallel_cnn, :dense_dilated_cnn] -> []
         :transformer -> [ff_dim: 32]
       end
 

@@ -18,6 +18,7 @@ defmodule BinClass.Model do
   alias BinClass.Model.{
     Cnn,
     CnnMixedPooling,
+    DenseDilatedCnn,
     MultiScaleCnn,
     ParallelCnn,
     SepSeCnn,
@@ -30,6 +31,7 @@ defmodule BinClass.Model do
     :multi_scale_cnn,
     :sep_se_cnn,
     :parallel_cnn,
+    :dense_dilated_cnn,
     :transformer
   ]
 
@@ -41,6 +43,7 @@ defmodule BinClass.Model do
     multi_scale_cnn: 5,
     sep_se_cnn: 1,
     parallel_cnn: 1,
+    dense_dilated_cnn: 1,
     transformer: 1
   }
 
@@ -141,6 +144,10 @@ defmodule BinClass.Model do
 
   def build(:parallel_cnn, vocab_size, opts) do
     ParallelCnn.build(vocab_size, opts)
+  end
+
+  def build(:dense_dilated_cnn, vocab_size, opts) do
+    DenseDilatedCnn.build(vocab_size, opts)
   end
 
   def build(:transformer, vocab_size, opts) do
