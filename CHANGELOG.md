@@ -2,10 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2026-09-08
 
 ### Added
 
+- Added top-level `BinClass.train/2` delegator for model training.
+- Added `BinClass.evaluate/3` and `BinClass.format_report/1` for comprehensive
+  dataset evaluation and classification reporting across all architectures.
+- Added `BinClass.Dataset` module with `summary/1`, `format_summary/1`, and
+  stratified `split/2`.
+- Added `:dense_dilated_cnn` architecture (Dense-Connected Multi-Scale Dilated
+  CNN with 4-head attentive pooling).
+- Added `:parallel_cnn` architecture with 2-head attentive pooling.
+- Added configurable `:label_smoothing` training option for target regularization.
+- Added configurable learning rate decay schedules via `:schedule`, supporting
+  linear decay with warmup (Meta FAIR schedule), cosine decay, step decay, and
+  constant rates.
+- Added configurable `:normalizer` option, defaulting to Unicode NFKC +
+  lowercasing.
+- Added configurable `:vocab_size` option, defaulting to `8_000`.
 - Added `BinClass.compile_document_predictor/2` for scanning one complete text
   with overlapping token windows. It returns every chunk's exact original byte
   span, token count, validation status, and raw prediction without truncating,
@@ -36,8 +51,11 @@ All notable changes to this project are documented in this file.
   validation contract, including training metadata and tokenizer metadata.
 - Serving and compiled prediction now accept only a string or a non-empty list
   of strings and report invalid input with the same error.
-- Argmax is now the default decision policy for every architecture, and `:cnn`
-  is the default architecture.
+- Argmax is now the default decision policy for every architecture, and
+  `:parallel_cnn` is the default architecture.
+- Default vocabulary size is now `8_000` and default text normalizer uses
+  Unicode NFKC + lowercasing.
+- Default learning rate schedule now uses Meta FAIR linear decay with warmup.
 - Decision policies and input validation no longer derive from model
   architecture. Serving and compiled prediction use the same persisted policy.
 - Serialized classifiers now require a tagged decision policy and an explicit
@@ -228,7 +246,7 @@ All notable changes to this project are documented in this file.
 
 - Added and refined README, examples documentation, and module documentation for the initial Hex release.
 
-[Unreleased]: https://github.com/preciz/bin_class/compare/v0.2.1...HEAD
+[0.3.0]: https://github.com/preciz/bin_class/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/preciz/bin_class/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/preciz/bin_class/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/preciz/bin_class/compare/v0.1.2...v0.1.3
